@@ -2,9 +2,11 @@ import React from 'react';
 import { useMarketStore } from '../store/useMarketStore';
 
 export const TopNavBar: React.FC = () => {
-  const filterCategory = useMarketStore((s) => s.filterCategory);
+  const workspaceMode = useMarketStore((s) => s.workspaceMode);
+  const quantModuleTab = useMarketStore((s) => s.quantModuleTab);
+  const setWorkspaceMode = useMarketStore((s) => s.setWorkspaceMode);
+  const openQuantModule = useMarketStore((s) => s.openQuantModule);
   const setFilterCategory = useMarketStore((s) => s.setFilterCategory);
-  const setPeriod = useMarketStore((s) => s.setPeriod);
   const setArchModalOpen = useMarketStore((s) => s.setArchModalOpen);
 
   return (
@@ -15,6 +17,7 @@ export const TopNavBar: React.FC = () => {
         onClick={(e) => {
           e.preventDefault();
           setFilterCategory('all');
+          setWorkspaceMode('chart');
         }}
         className="text-sm sm:text-base font-bold tracking-tight text-white whitespace-nowrap shrink-0"
       >
@@ -28,37 +31,50 @@ export const TopNavBar: React.FC = () => {
       >
         <button
           type="button"
-          onClick={() => setFilterCategory('all')}
+          onClick={() => setWorkspaceMode('chart')}
           className={`hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-            filterCategory === 'all' ? 'text-white underline underline-offset-4 decoration-[#2962ff]' : ''
+            workspaceMode === 'chart'
+              ? 'text-white underline underline-offset-4 decoration-[#2962ff]'
+              : ''
           }`}
         >
-          沪深核心行情
+          主图看盘工作台
         </button>
         <button
           type="button"
-          onClick={() => setFilterCategory('watchlist')}
+          data-testid="nav-quant-overview"
+          onClick={() => openQuantModule('overview')}
           className={`hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-            filterCategory === 'watchlist' ? 'text-white underline underline-offset-4 decoration-[#2962ff]' : ''
+            workspaceMode === 'quant' && quantModuleTab === 'overview'
+              ? 'text-[#F6465D] font-semibold underline underline-offset-4 decoration-[#F6465D]'
+              : ''
           }`}
         >
-          自选盯盘池
+          超短游资作战室
         </button>
         <button
           type="button"
-          onClick={() => setFilterCategory('special')}
+          data-testid="nav-quant-auction"
+          onClick={() => openQuantModule('auction')}
           className={`hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-            filterCategory === 'special' ? 'text-white underline underline-offset-4 decoration-[#2962ff]' : ''
+            workspaceMode === 'quant' && quantModuleTab === 'auction'
+              ? 'text-[#F59E0B] font-semibold underline underline-offset-4 decoration-[#F59E0B]'
+              : ''
           }`}
         >
-          涨跌停与竞价
+          09:25竞价雷达
         </button>
         <button
           type="button"
-          onClick={() => setPeriod('intraday')}
-          className="hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          data-testid="nav-quant-regulatory"
+          onClick={() => openQuantModule('regulatory')}
+          className={`hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+            workspaceMode === 'quant' && quantModuleTab === 'regulatory'
+              ? 'text-[#38bdf8] font-semibold underline underline-offset-4 decoration-[#38bdf8]'
+              : ''
+          }`}
         >
-          日内分时全景
+          连板梯队与异动逆推
         </button>
       </nav>
 
@@ -75,3 +91,4 @@ export const TopNavBar: React.FC = () => {
     </header>
   );
 };
+

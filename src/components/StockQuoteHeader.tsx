@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Star, ListFilter } from 'lucide-react';
+import { Star, ListFilter, BellRing } from 'lucide-react';
 import { useMarketStore } from '../store/useMarketStore';
 import type { MarketScenario } from '../types/market';
 import {
@@ -16,9 +16,11 @@ import {
 export const StockQuoteHeader: React.FC = () => {
   const quote = useMarketStore((s) => s.quotes[s.selectedSymbol]);
   const watchlist = useMarketStore((s) => s.watchlist);
+  const alertRules = useMarketStore((s) => s.alertRules);
   const toggleWatchlist = useMarketStore((s) => s.toggleWatchlist);
   const triggerScenario = useMarketStore((s) => s.triggerScenario);
   const setMobileWatchlistOpen = useMarketStore((s) => s.setMobileWatchlistOpen);
+  const setAlertModalOpen = useMarketStore((s) => s.setAlertModalOpen);
 
   const prevPriceRef = useRef<number | null>(quote?.price ?? null);
   const [priceFlash, setPriceFlash] = useState<string>('');
@@ -40,6 +42,10 @@ export const StockQuoteHeader: React.FC = () => {
   if (!quote) return null;
 
   const isStarred = watchlist.includes(quote.symbol);
+  const stockAlerts = alertRules.filter((r) => r.symbol === quote.symbol);
+  const activeAlertCount = stockAlerts.filter((r) => r.enabled && !r.triggered).length;
+  const triggeredAlertCount = stockAlerts.filter((r) => r.triggered).length;
+
   const priceColor = getSignedColorClass(quote.change);
   const openColor = getDirectionColorClass(getPriceDirection(quote.open, quote.prevClose));
   const highColor = getDirectionColorClass(getPriceDirection(quote.high, quote.prevClose));
@@ -70,7 +76,7 @@ export const StockQuoteHeader: React.FC = () => {
           </button>
 
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <h1 className="text-base sm:text-lg font-bold text-white tracking-tight truncate">
                 {quote.name}
               </h1>
@@ -85,6 +91,26 @@ export const StockQuoteHeader: React.FC = () => {
                     isStarred ? 'fill-[#F59E0B] text-[#F59E0B]' : ''
                   }`}
                 />
+              </button>
+              <button
+                type="button"
+                aria-label="设置价格预警"
+                onClick={() => setAlertModalOpen(true)}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  triggeredAlertCount > 0
+                    ? 'bg-[#F59E0B]/20 border-[#F59E0B] text-[#F59E0B]'
+                    : activeAlertCount > 0
+                    ? 'bg-[#131722] border-[#2a2e39] text-[#F59E0B] hover:border-[#F59E0B]'
+                    : 'bg-[#131722] border-[#2a2e39] text-[#9ca3af] hover:text-white'
+                }`}
+              >
+                <BellRing className="w-3 h-3" />
+                <span>价格预警</span>
+                {(activeAlertCount > 0 || triggeredAlertCount > 0) && (
+                  <span className="font-mono tabular-nums">
+                    ({activeAlertCount})
+                  </span>
+                )}
               </button>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-[#787b86] font-mono tabular-nums">

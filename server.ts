@@ -232,8 +232,29 @@ async function startServer() {
 
   const server = http.createServer(app);
 
-  // 4. WebSocket 服务端 (附加在同一个 HTTP 3000 端口的 /ws 路径)
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  // 4. WebSocket 服务端 (使用 noServer 模式精准接管 upgrade，避免 ws 库拦截非 /ws 升级请求导致 @vite/client 报错)
+  const wss = new WebSocketServer({ noServer: true });
+  const viteHmrWss = new WebSocketServer({ noServer: true });
+
+  viteHmrWss.on('connection', (ws: WebSocket) => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'connected' }));
+    }
+  });
+
+  server.on('upgrade', (req, socket, head) => {
+    const pathname = req.url ? req.url.split('?')[0] : '/';
+    if (pathname === '/ws') {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+      });
+    } else {
+      // 兼容任何来自 @vite/client 的 HMR WebSocket 握手请求，防止出现 "WebSocket closed without opened"
+      viteHmrWss.handleUpgrade(req, socket, head, (ws) => {
+        viteHmrWss.emit('connection', ws, req);
+      });
+    }
+  });
 
   wss.on('connection', (ws: WebSocket) => {
     // 连接建立后立即下发一次全量 Level-1 初始快照
@@ -301,7 +322,11 @@ async function startServer() {
   // 5. 挂载 Vite 开发中间件或生产静态资源
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+        watch: null,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);

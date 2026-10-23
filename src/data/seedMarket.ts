@@ -8,6 +8,7 @@ import type {
   TickData,
   TradeTick,
   TradingPhase,
+  UltraShortProfile,
 } from '../types/market';
 
 interface StockSeedConfig {
@@ -435,6 +436,267 @@ function buildInitialTrades(price: number, phase: TradingPhase): TradeTick[] {
   });
 }
 
+function buildUltraShortProfile(cfg: StockSeedConfig, amount: number): UltraShortProfile {
+  const is30Rule = cfg.code.startsWith('300') || cfg.code.startsWith('688');
+  const boardRuleType = is30Rule ? 'CHINEXT_STAR_30' : 'MAIN_20';
+
+  switch (cfg.symbol) {
+    case '601360.SH': {
+      // 6连板空间总龙：09:25 一字巨封顶板 + 10日累计偏离逼近100%特停红线
+      const yesterdayAmount = 3120000000;
+      const auctionAmount = 248000000; // 占昨比 ~7.95% 惜售锁筹
+      return {
+        auctionPrice: 11.55,
+        auctionChangePercent: 10.0,
+        auctionVolume: Math.round(auctionAmount / (11.55 * 100)),
+        auctionAmount,
+        yesterdayAmount,
+        auctionUnmatchedHands: 128500,
+        auctionVolumeRatio: 4.85,
+        yesterdayPerformanceNote: '昨5连板加速T字板',
+        consecutiveBoards: 6,
+        yesterdayBoards: 5,
+        isIntradayTouchedLimitUp: true,
+        firstSealTime: '09:25:00',
+        dragonRole: 'SPACE_DRAGON',
+        boardRuleType,
+        stockReturnT1: 10.02,
+        stockReturnT2: 9.98,
+        indexReturnT1: 0.85,
+        indexReturnT2: 0.42,
+        indexReturnToday: 1.05,
+        cumDeviation10d: 89.4,
+        abnormalCount10d: 3,
+      };
+    }
+    case '002230.SZ': {
+      // 3连板人工智能日内先锋龙：09:25 爆量高开超预期抢筹
+      const yesterdayAmount = 4850000000;
+      const auctionAmount = 562600000; // 占昨比 11.60% 黄金抢筹
+      return {
+        auctionPrice: 49.25,
+        auctionChangePercent: 5.24,
+        auctionVolume: Math.round(auctionAmount / (49.25 * 100)),
+        auctionAmount,
+        yesterdayAmount,
+        auctionUnmatchedHands: 14600,
+        auctionVolumeRatio: 6.42,
+        yesterdayPerformanceNote: '昨2板烂板分歧换手',
+        consecutiveBoards: 3,
+        yesterdayBoards: 2,
+        isIntradayTouchedLimitUp: true,
+        firstSealTime: '09:33:18',
+        dragonRole: 'PIONEER_DRAGON',
+        boardRuleType,
+        stockReturnT1: 10.01,
+        stockReturnT2: 9.96,
+        indexReturnT1: 1.12,
+        indexReturnT2: 0.55,
+        indexReturnToday: 1.82,
+        cumDeviation10d: 34.8,
+        abnormalCount10d: 1,
+      };
+    }
+    case '688981.SH': {
+      // 2连板科创板20cm容量中军龙：30%异动阈值逆推示范
+      const yesterdayAmount = 9680000000;
+      const auctionAmount = 885000000; // 占昨比 9.14%
+      return {
+        auctionPrice: 95.6,
+        auctionChangePercent: 4.82,
+        auctionVolume: Math.round(auctionAmount / (95.6 * 100)),
+        auctionAmount,
+        yesterdayAmount,
+        auctionUnmatchedHands: 9200,
+        auctionVolumeRatio: 3.95,
+        yesterdayPerformanceNote: '昨20cm首板百亿主升',
+        consecutiveBoards: 2,
+        yesterdayBoards: 1,
+        isIntradayTouchedLimitUp: true,
+        firstSealTime: '09:42:06',
+        dragonRole: 'CAPACITY_CORE',
+        boardRuleType: 'CHINEXT_STAR_30',
+        stockReturnT1: 19.98,
+        stockReturnT2: 6.45,
+        indexReturnT1: 1.65,
+        indexReturnT2: 0.88,
+        indexReturnToday: 3.35,
+        cumDeviation10d: 38.6,
+        abnormalCount10d: 1,
+      };
+    }
+    case '300750.SZ': {
+      // 首板 (1板) 创业板20cm先锋：超预期抢筹
+      const yesterdayAmount = 8420000000;
+      const auctionAmount = 682000000; // 占昨比 8.10%
+      return {
+        auctionPrice: 255.2,
+        auctionChangePercent: 3.53,
+        auctionVolume: Math.round(auctionAmount / (255.2 * 100)),
+        auctionAmount,
+        yesterdayAmount,
+        auctionUnmatchedHands: 6800,
+        auctionVolumeRatio: 3.12,
+        yesterdayPerformanceNote: '昨缩量十字星洗盘',
+        consecutiveBoards: 1,
+        yesterdayBoards: 0,
+        isIntradayTouchedLimitUp: true,
+        firstSealTime: '10:05:42',
+        dragonRole: 'PIONEER_DRAGON',
+        boardRuleType: 'CHINEXT_STAR_30',
+        stockReturnT1: 11.4,
+        stockReturnT2: 8.6,
+        indexReturnT1: 1.25,
+        indexReturnT2: 0.72,
+        indexReturnToday: 2.52,
+        cumDeviation10d: 26.4,
+        abnormalCount10d: 0,
+      };
+    }
+    case '002594.SZ': {
+      // 首板 (1板) 换手卡位龙：分歧弱转强
+      const yesterdayAmount = 7950000000;
+      const auctionAmount = 468000000; // 占昨比 5.89%
+      return {
+        auctionPrice: 298.5,
+        auctionChangePercent: 2.23,
+        auctionVolume: Math.round(auctionAmount / (298.5 * 100)),
+        auctionAmount,
+        yesterdayAmount,
+        auctionUnmatchedHands: 4200,
+        auctionVolumeRatio: 2.58,
+        yesterdayPerformanceNote: '昨冲高回落长上影分歧',
+        consecutiveBoards: 1,
+        yesterdayBoards: 0,
+        isIntradayTouchedLimitUp: true,
+        firstSealTime: '10:28:15',
+        dragonRole: 'TURNOVER_DRAGON',
+        boardRuleType: 'MAIN_20',
+        stockReturnT1: 8.25,
+        stockReturnT2: 5.6,
+        indexReturnT1: 0.92,
+        indexReturnT2: 0.48,
+        indexReturnToday: 1.82,
+        cumDeviation10d: 21.5,
+        abnormalCount10d: 0,
+      };
+    }
+    case '300059.SZ': {
+      // 竞价天量爆量兑现预警 + 冲高炸板样本 (昨日首板，今日1进2失败)
+      const yesterdayAmount = 9200000000;
+      const auctionAmount = 2162000000; // 占昨比 23.50% (>20%爆量警戒)
+      return {
+        auctionPrice: 24.15,
+        auctionChangePercent: 3.21,
+        auctionVolume: Math.round(auctionAmount / (24.15 * 100)),
+        auctionAmount,
+        yesterdayAmount,
+        auctionUnmatchedHands: -3400,
+        auctionVolumeRatio: 7.85,
+        yesterdayPerformanceNote: '昨尾盘偷袭烂板',
+        consecutiveBoards: 0,
+        yesterdayBoards: 1,
+        isIntradayTouchedLimitUp: true, // 曾触及涨停后炸板，用于真实计算封板率
+        firstSealTime: null,
+        dragonRole: 'CAPACITY_CORE',
+        boardRuleType: 'CHINEXT_STAR_30',
+        stockReturnT1: 14.8,
+        stockReturnT2: 7.2,
+        indexReturnT1: 1.45,
+        indexReturnT2: 0.6,
+        indexReturnToday: 2.52,
+        cumDeviation10d: 29.8,
+        abnormalCount10d: 0,
+      };
+    }
+    case '000651.SZ': {
+      // 竞价核按钮示范（昨日断板后今日竞价深水核按钮跌停）
+      const yesterdayAmount = 3680000000;
+      const auctionAmount = 412000000;
+      return {
+        auctionPrice: 40.35,
+        auctionChangePercent: -8.71,
+        auctionVolume: Math.round(auctionAmount / (40.35 * 100)),
+        auctionAmount,
+        yesterdayAmount,
+        auctionUnmatchedHands: -86400,
+        auctionVolumeRatio: 4.12,
+        yesterdayPerformanceNote: '昨高位天量断板大面',
+        consecutiveBoards: 0,
+        yesterdayBoards: 2,
+        isIntradayTouchedLimitUp: false,
+        firstSealTime: null,
+        dragonRole: 'FOLLOWER',
+        boardRuleType: 'MAIN_20',
+        stockReturnT1: -6.8,
+        stockReturnT2: 10.0,
+        indexReturnT1: 0.9,
+        indexReturnT2: 0.5,
+        indexReturnToday: 1.82,
+        cumDeviation10d: 12.4,
+        abnormalCount10d: 0,
+      };
+    }
+    case '600519.SH': {
+      // 酿酒容量中军龙：分歧弱转强 + 主板 k∈{2,3} 异动逆推
+      const yesterdayAmount = 6150000000;
+      const auctionAmount = 398000000; // 占昨比 6.47%
+      return {
+        auctionPrice: 1576.0,
+        auctionChangePercent: 1.81,
+        auctionVolume: Math.round(auctionAmount / (1576.0 * 100)),
+        auctionAmount,
+        yesterdayAmount,
+        auctionUnmatchedHands: 1850,
+        auctionVolumeRatio: 2.34,
+        yesterdayPerformanceNote: '昨缩量回踩5日线企稳',
+        consecutiveBoards: 0,
+        yesterdayBoards: 0,
+        isIntradayTouchedLimitUp: false,
+        firstSealTime: null,
+        dragonRole: 'CAPACITY_CORE',
+        boardRuleType: 'MAIN_20',
+        stockReturnT1: 6.85,
+        stockReturnT2: 5.42,
+        indexReturnT1: 0.82,
+        indexReturnT2: 0.45,
+        indexReturnToday: 1.05,
+        cumDeviation10d: 18.6,
+        abnormalCount10d: 0,
+      };
+    }
+    default: {
+      const yesterdayAmount = Math.max(1500000000, Math.round(amount * 1.18));
+      const auctionChangePercent = Number((((cfg.open - cfg.prevClose) / cfg.prevClose) * 100).toFixed(2));
+      const ratio = auctionChangePercent >= 1.5 ? 0.058 : 0.036;
+      const auctionAmount = Math.round(yesterdayAmount * ratio);
+      return {
+        auctionPrice: cfg.open,
+        auctionChangePercent,
+        auctionVolume: Math.max(100, Math.round(auctionAmount / (cfg.open * 100))),
+        auctionAmount,
+        yesterdayAmount,
+        auctionUnmatchedHands: auctionChangePercent >= 0 ? 1600 : -900,
+        auctionVolumeRatio: Number((cfg.volumeRatio * 1.35).toFixed(2)),
+        yesterdayPerformanceNote: auctionChangePercent >= 1.0 ? '昨良性换手洗盘' : '昨窄幅震荡整理',
+        consecutiveBoards: 0,
+        yesterdayBoards: cfg.symbol === '601899.SH' ? 1 : 0,
+        isIntradayTouchedLimitUp: false,
+        firstSealTime: null,
+        dragonRole: cfg.marketCap >= 8000 ? 'CAPACITY_CORE' : 'FOLLOWER',
+        boardRuleType,
+        stockReturnT1: 4.6,
+        stockReturnT2: 3.8,
+        indexReturnT1: 0.75,
+        indexReturnT2: 0.4,
+        indexReturnToday: 1.05,
+        cumDeviation10d: 16.2,
+        abnormalCount10d: 0,
+      };
+    }
+  }
+}
+
 export function createInitialQuotes(): Record<string, TickData> {
   const quotes: Record<string, TickData> = {};
   const now = Date.now();
@@ -446,7 +708,7 @@ export function createInitialQuotes(): Record<string, TickData> {
     const changePercent = Number(((change / cfg.prevClose) * 100).toFixed(2));
     const amount = Math.round(cfg.volume * 100 * cfg.price);
     const amplitude = Number((((cfg.high - cfg.low) / cfg.prevClose) * 100).toFixed(2));
-    const outerVolume = Math.round(cfg.volume * (change >= 0 ? 0.56 : 0.42));
+    const outerVolume = Math.round(cfg.volume * (change >= 0 ? 0.58 : 0.38));
     const innerVolume = cfg.volume - outerVolume;
 
     quotes[cfg.symbol] = {
@@ -479,6 +741,7 @@ export function createInitialQuotes(): Record<string, TickData> {
       phase: cfg.initialPhase,
       orderBook: buildOrderBookForPhase(cfg.price, cfg.initialPhase, limitUpPrice, limitDownPrice, index * 13),
       recentTrades: buildInitialTrades(cfg.price, cfg.initialPhase),
+      ultraShort: buildUltraShortProfile(cfg, amount),
       updatedAt: now,
     };
   });

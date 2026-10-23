@@ -1,9 +1,11 @@
 import type {
+  AlertConditionType,
   FormattedOrderBookRow,
   KLineBar,
   OrderBook5,
   OrderBookLevel,
   OrderBookMetrics,
+  PriceAlertRule,
   PriceDirection,
   TickData,
 } from '../types/market';
@@ -443,3 +445,58 @@ export function filterAndSortStocks(
     return sortDir === 'asc' ? valA - valB : valB - valA;
   });
 }
+
+/**
+ * 校验单条价格/涨跌幅预警规则是否被当前实时 Tick 行情触发
+ */
+export function evaluatePriceAlertRule(rule: PriceAlertRule, tick: TickData): boolean {
+  if (!rule.enabled || rule.triggered || rule.symbol !== tick.symbol) {
+    return false;
+  }
+  if (!Number.isFinite(rule.threshold)) {
+    return false;
+  }
+
+  switch (rule.condition) {
+    case 'CHANGE_PCT_ABOVE':
+      return tick.changePercent >= rule.threshold;
+    case 'CHANGE_PCT_BELOW':
+      return tick.changePercent <= rule.threshold;
+    case 'PRICE_ABOVE':
+      return tick.price >= rule.threshold;
+    case 'PRICE_BELOW':
+      return tick.price <= rule.threshold;
+    default:
+      return false;
+  }
+}
+
+/**
+ * 格式化预警条件为可读中文描述
+ */
+export function formatAlertConditionLabel(
+  condition: AlertConditionType,
+  threshold: number
+): string {
+  switch (condition) {
+    case 'CHANGE_PCT_ABOVE':
+      return `涨跌幅 ≥ ${threshold > 0 ? '+' : ''}${threshold.toFixed(2)}%`;
+    case 'CHANGE_PCT_BELOW':
+      return `涨跌幅 ≤ ${threshold > 0 ? '+' : ''}${threshold.toFixed(2)}%`;
+    case 'PRICE_ABOVE':
+      return `最新价 ≥ ${threshold.toFixed(2)}元`;
+    case 'PRICE_BELOW':
+      return `最新价 ≤ ${threshold.toFixed(2)}元`;
+  }
+}
+
+/**
+ * 构建触发预警时的通知正文文案
+ */
+export function buildAlertTriggerMessage(rule: PriceAlertRule, tick: TickData): string {
+  const condText = formatAlertConditionLabel(rule.condition, rule.threshold);
+  return `${tick.name} (${tick.symbol}) 触发预警 [${condText}]，当前现价 ${formatPrice(
+    tick.price
+  )} 元 (${formatSignedPercent(tick.changePercent)})`;
+}
+

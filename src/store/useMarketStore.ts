@@ -5,13 +5,16 @@ import {
   createInitialQuotes,
 } from '../data/seedMarket';
 import type {
+  AlertConditionType,
   ChartPeriod,
   ConnectionStatus,
   MainIndicator,
   MarketIndexQuote,
   MarketScenario,
+  PriceAlertRule,
   SubIndicator,
   TickData,
+  TriggeredAlertEvent,
 } from '../types/market';
 
 /**
@@ -58,6 +61,39 @@ const DEFAULT_WATCHLIST = [
   '000651.SZ',
 ];
 
+const DEFAULT_ALERT_RULES: PriceAlertRule[] = [
+  {
+    id: 'seed-alert-1',
+    symbol: '600519.SH',
+    stockName: '贵州茅台',
+    condition: 'CHANGE_PCT_ABOVE',
+    threshold: 5.0,
+    enabled: true,
+    triggered: false,
+    createdAt: Date.now() - 3600000,
+  },
+  {
+    id: 'seed-alert-2',
+    symbol: '600519.SH',
+    stockName: '贵州茅台',
+    condition: 'CHANGE_PCT_BELOW',
+    threshold: -2.0,
+    enabled: true,
+    triggered: false,
+    createdAt: Date.now() - 1800000,
+  },
+  {
+    id: 'seed-alert-3',
+    symbol: '002594.SZ',
+    stockName: '比亚迪',
+    condition: 'CHANGE_PCT_ABOVE',
+    threshold: 4.5,
+    enabled: true,
+    triggered: false,
+    createdAt: Date.now() - 900000,
+  },
+];
+
 function loadSavedWatchlist(): string[] {
   try {
     const saved = localStorage.getItem('alphapulse_watchlist_v1');
@@ -71,6 +107,29 @@ function loadSavedWatchlist(): string[] {
     // ignore storage errors
   }
   return DEFAULT_WATCHLIST;
+}
+
+function loadSavedAlerts(): PriceAlertRule[] {
+  try {
+    const saved = localStorage.getItem('alphapulse_alerts_v1');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return DEFAULT_ALERT_RULES;
+}
+
+function persistAlerts(rules: PriceAlertRule[]): void {
+  try {
+    localStorage.setItem('alphapulse_alerts_v1', JSON.stringify(rules));
+  } catch {
+    // ignore storage errors
+  }
 }
 
 export interface MarketStoreState {
@@ -92,10 +151,19 @@ export interface MarketStoreState {
   sortBy: 'default' | 'price' | 'changePercent';
   sortDir: 'asc' | 'desc';
 
+  // 价格与涨跌幅预警规则状态
+  alertRules: PriceAlertRule[];
+  triggeredAlerts: TriggeredAlertEvent[];
+  isAlertModalOpen: boolean;
+
   // 移动端底部面板与抽屉状态
-  mobileBottomTab: 'orderbook' | 'trades' | 'fundamentals';
+  mobileBottomTab: 'orderbook' | 'trades' | 'fundamentals' | 'quant';
   isMobileWatchlistOpen: boolean;
   isArchModalOpen: boolean;
+
+  // 超短游资量化工作台模式与子模块切换
+  workspaceMode: 'chart' | 'quant';
+  quantModuleTab: 'overview' | 'auction' | 'ladder' | 'resonance' | 'regulatory' | 'vwdvr';
 
   // WebSocket 连接与节流监控状态
   connectionStatus: ConnectionStatus;
@@ -111,11 +179,42 @@ export interface MarketStoreState {
   setFilterCategory: (category: 'all' | 'watchlist' | 'special') => void;
   toggleSort: (field: 'price' | 'changePercent') => void;
   toggleWatchlist: (symbol: string) => void;
-  setMobileBottomTab: (tab: 'orderbook' | 'trades' | 'fundamentals') => void;
+  setMobileBottomTab: (tab: 'orderbook' | 'trades' | 'fundamentals' | 'quant') => void;
   setMobileWatchlistOpen: (open: boolean) => void;
   setArchModalOpen: (open: boolean) => void;
+  setAlertModalOpen: (open: boolean) => void;
+  setWorkspaceMode: (mode: 'chart' | 'quant') => void;
+  setQuantModuleTab: (
+    tab: 'overview' | 'auction' | 'ladder' | 'resonance' | 'regulatory' | 'vwdvr'
+  ) => void;
+  openQuantModule: (
+    tab: 'overview' | 'auction' | 'ladder' | 'resonance' | 'regulatory' | 'vwdvr',
+    symbol?: string
+  ) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;
   setBatchWindowMs: (ms: number) => void;
+
+  // 价格预警管理 Actions
+  addAlertRule: (input: {
+    symbol: string;
+    stockName: string;
+    condition: AlertConditionType;
+    threshold: number;
+  }) => PriceAlertRule;
+  removeAlertRule: (id: string) => void;
+  toggleAlertRule: (id: string) => void;
+  resetAlertRule: (id: string) => void;
+  markRulesTriggered: (
+    triggeredList: {
+      ruleId: string;
+      price: number;
+      changePercent: number;
+      message: string;
+      timestamp: number;
+    }[]
+  ) => void;
+  dismissTriggeredAlert: (eventId: string) => void;
+  clearAllTriggeredAlerts: () => void;
 
   // 批量合并服务端快照
   applyInitSnapshot: (
@@ -152,9 +251,16 @@ export const useMarketStore = create<MarketStoreState>((set, get) => ({
   sortBy: 'default',
   sortDir: 'desc',
 
+  alertRules: loadSavedAlerts(),
+  triggeredAlerts: [],
+  isAlertModalOpen: false,
+
   mobileBottomTab: 'orderbook',
   isMobileWatchlistOpen: false,
   isArchModalOpen: false,
+
+  workspaceMode: 'chart',
+  quantModuleTab: 'overview',
 
   connectionStatus: 'CONNECTING',
   batchWindowMs: 150,
@@ -207,9 +313,120 @@ export const useMarketStore = create<MarketStoreState>((set, get) => ({
 
   setArchModalOpen: (isArchModalOpen) => set({ isArchModalOpen }),
 
+  setAlertModalOpen: (isAlertModalOpen) => set({ isAlertModalOpen }),
+
+  setWorkspaceMode: (workspaceMode) => set({ workspaceMode }),
+
+  setQuantModuleTab: (quantModuleTab) => set({ quantModuleTab }),
+
+  openQuantModule: (quantModuleTab, symbol) =>
+    set((state) => ({
+      workspaceMode: 'quant',
+      quantModuleTab,
+      selectedSymbol: symbol ?? state.selectedSymbol,
+    })),
+
   setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
 
   setBatchWindowMs: (batchWindowMs) => set({ batchWindowMs }),
+
+  addAlertRule: ({ symbol, stockName, condition, threshold }) => {
+    const newRule: PriceAlertRule = {
+      id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      symbol,
+      stockName,
+      condition,
+      threshold: Number(threshold.toFixed(2)),
+      enabled: true,
+      triggered: false,
+      createdAt: Date.now(),
+    };
+    set((state) => {
+      const next = [newRule, ...state.alertRules];
+      persistAlerts(next);
+      return { alertRules: next };
+    });
+    return newRule;
+  },
+
+  removeAlertRule: (id) =>
+    set((state) => {
+      const next = state.alertRules.filter((r) => r.id !== id);
+      persistAlerts(next);
+      return { alertRules: next };
+    }),
+
+  toggleAlertRule: (id) =>
+    set((state) => {
+      const next = state.alertRules.map((r) =>
+        r.id === id ? { ...r, enabled: !r.enabled, triggered: false } : r
+      );
+      persistAlerts(next);
+      return { alertRules: next };
+    }),
+
+  resetAlertRule: (id) =>
+    set((state) => {
+      const next = state.alertRules.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              enabled: true,
+              triggered: false,
+              triggeredAt: undefined,
+              triggeredPrice: undefined,
+              triggeredChangePercent: undefined,
+            }
+          : r
+      );
+      persistAlerts(next);
+      return { alertRules: next };
+    }),
+
+  markRulesTriggered: (triggeredList) => {
+    if (triggeredList.length === 0) return;
+    set((state) => {
+      const map = new Map(triggeredList.map((item) => [item.ruleId, item]));
+      const nextEvents: TriggeredAlertEvent[] = [];
+
+      const nextRules = state.alertRules.map((rule) => {
+        const hit = map.get(rule.id);
+        if (!hit) return rule;
+        nextEvents.push({
+          id: `evt-${hit.timestamp}-${rule.id}`,
+          ruleId: rule.id,
+          symbol: rule.symbol,
+          stockName: rule.stockName,
+          condition: rule.condition,
+          threshold: rule.threshold,
+          price: hit.price,
+          changePercent: hit.changePercent,
+          message: hit.message,
+          timestamp: hit.timestamp,
+        });
+        return {
+          ...rule,
+          triggered: true,
+          triggeredAt: hit.timestamp,
+          triggeredPrice: hit.price,
+          triggeredChangePercent: hit.changePercent,
+        };
+      });
+
+      persistAlerts(nextRules);
+      return {
+        alertRules: nextRules,
+        triggeredAlerts: [...nextEvents, ...state.triggeredAlerts].slice(0, 15),
+      };
+    });
+  },
+
+  dismissTriggeredAlert: (eventId) =>
+    set((state) => ({
+      triggeredAlerts: state.triggeredAlerts.filter((e) => e.id !== eventId),
+    })),
+
+  clearAllTriggeredAlerts: () => set({ triggeredAlerts: [] }),
 
   applyInitSnapshot: (quotes, indices, batchWindowMs, serverTime) => {
     set({
@@ -294,3 +511,4 @@ export const useMarketStore = create<MarketStoreState>((set, get) => ({
     }
   },
 }));
+

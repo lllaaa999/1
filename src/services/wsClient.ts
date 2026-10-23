@@ -9,6 +9,7 @@ class MarketWebSocketClient {
   private ws: WebSocket | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private disconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
   private manuallyClosed = false;
 
@@ -24,7 +25,12 @@ class MarketWebSocketClient {
 
   public connect(): void {
     if (typeof window === 'undefined') return;
+    if (this.disconnectTimer) {
+      clearTimeout(this.disconnectTimer);
+      this.disconnectTimer = null;
+    }
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      this.manuallyClosed = false;
       return;
     }
 
@@ -34,15 +40,20 @@ class MarketWebSocketClient {
 
     try {
       const url = this.getEndpointUrl();
-      this.ws = new WebSocket(url);
+      const socket = new WebSocket(url);
+      this.ws = socket;
 
-      this.ws.onopen = () => {
+      socket.onopen = () => {
+        if (this.manuallyClosed) {
+          socket.close();
+          return;
+        }
         this.reconnectAttempts = 0;
         useMarketStore.getState().setConnectionStatus('CONNECTED');
         this.startHeartbeat();
       };
 
-      this.ws.onmessage = (event: MessageEvent) => {
+      socket.onmessage = (event: MessageEvent) => {
         try {
           const msg = JSON.parse(String(event.data)) as WSServerMessage;
           const state = useMarketStore.getState();
@@ -59,8 +70,11 @@ class MarketWebSocketClient {
         }
       };
 
-      this.ws.onclose = () => {
+      socket.onclose = () => {
         this.stopHeartbeat();
+        if (this.ws === socket) {
+          this.ws = null;
+        }
         if (!this.manuallyClosed) {
           this.scheduleReconnect();
         } else {
@@ -68,7 +82,7 @@ class MarketWebSocketClient {
         }
       };
 
-      this.ws.onerror = () => {
+      socket.onerror = () => {
         // 错误后交由 onclose 统一触发指数退避重连
       };
     } catch {
@@ -141,13 +155,21 @@ class MarketWebSocketClient {
   }
 
   public disconnect(): void {
-    this.manuallyClosed = true;
-    this.stopHeartbeat();
-    this.clearReconnectTimer();
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    if (this.disconnectTimer) {
+      clearTimeout(this.disconnectTimer);
     }
+    // 延迟关闭以兼容 React StrictMode 开发模式下的瞬间卸载重挂载，避免关闭处于 CONNECTING 状态的连接
+    this.disconnectTimer = setTimeout(() => {
+      this.manuallyClosed = true;
+      this.stopHeartbeat();
+      this.clearReconnectTimer();
+      if (this.ws) {
+        if (this.ws.readyState === WebSocket.OPEN) {
+          this.ws.close();
+        }
+        this.ws = null;
+      }
+    }, 150);
   }
 }
 
