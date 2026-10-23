@@ -236,6 +236,7 @@ test('价格与涨跌幅预警阈值计算与触发判定', () => {
 
 import {
   analyzeAuctionVolumeRatio,
+  analyzeMarketRegulatoryOverview,
   analyzeMarketThemeResonance,
   analyzeStockDragonTigerList,
   buildDragonTigerNetworkData,
@@ -551,4 +552,39 @@ test('板块/题材共振监测与主流资金进攻方向识别：涨停密度�
   const storageRot = rotationOverview.themes.find((t) => t.sectorName === '电池储能')!;
   assert.ok(storageRot.limitUpDensityPercent >= storageLive.limitUpDensityPercent);
   assert.ok(storageRot.resonanceScore >= storageLive.resonanceScore);
+});
+
+test('监管异动监测模块：2/3日涨跌幅实时计算、法定异动窗口逆推与红黄绿三色信号灯预警', () => {
+  const quotesMap = createInitialQuotes();
+  const quotes = Object.values(quotesMap);
+
+  const overview = analyzeMarketRegulatoryOverview(quotes);
+  assert.equal(overview.items.length, quotes.length);
+  assert.equal(
+    overview.redLightCount + overview.yellowLightCount + overview.greenLightCount,
+    quotes.length
+  );
+  assert.ok(overview.redLightCount >= 1);
+  assert.ok(overview.yellowLightCount >= 1);
+  assert.ok(overview.greenLightCount >= 1);
+
+  // 1. 三六零 (601360.SH): 6连板空间龙，10日累计偏离 > 95% 且近10日已3次异动 -> 红灯预警
+  const r360 = calculateRegulatoryDeviation(quotesMap['601360.SH']);
+  assert.equal(r360.alertLight, 'RED');
+  assert.equal(r360.alertLightLabel, '红灯 · 特停/触线高危');
+  assert.equal(r360.severeSuspensionLockWarning, true);
+  assert.ok(r360.stockCumReturn2DayPercent > 20);
+  assert.ok(r360.stockCumReturn3DayPercent > 30);
+
+  // 2. 科大讯飞 (002230.SZ): T-2=+9.96%, T-1=+10.01%, 今日高开 -> 3日窗口占用极高，应触发红灯或黄灯压线预警
+  const rKdxf = calculateRegulatoryDeviation(quotesMap['002230.SZ']);
+  assert.ok(rKdxf.alertLight === 'RED' || rKdxf.alertLight === 'YELLOW');
+  assert.equal(rKdxf.bindingWindowK, 3);
+  assert.ok(rKdxf.windowSaturation3DayPercent >= 85);
+
+  // 3. 招商银行 (600036.SH): 温和波动大盘股 -> 绿灯安全区间
+  const rCmb = calculateRegulatoryDeviation(quotesMap['600036.SH']);
+  assert.equal(rCmb.alertLight, 'GREEN');
+  assert.equal(rCmb.alertLightLabel, '绿灯 · 安全运行区间');
+  assert.equal(rCmb.severeSuspensionLockWarning, false);
 });

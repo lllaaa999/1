@@ -383,24 +383,41 @@ export interface ThemeResonanceOverview {
   tacticalPlaybook: string; // 游资接力与仓位配置策略建议
 }
 
+export type RegulatoryAlertLight = 'RED' | 'YELLOW' | 'GREEN';
+
 /**
- * 现行注册制法定复利异动监管逆推结果 (k ∈ {2, 3} 窗口 + 10日100%严重异动特停预警)
+ * 现行注册制法定复利异动监管逆推与红黄灯特停监测结果 (k ∈ {2, 3} 窗口 + 10日100%/4次异动特停预警)
  */
 export interface RegulatoryDeviationResult {
   symbol: string;
   code: string;
   name: string;
+  sector: string;
   ruleThresholdPercent: number; // 20% (主板) 或 30% (创业板/科创板)
+  boardRuleLabel: string; // '沪深主板 ±20%' | '创业板/科创板 ±30%'
   currentPrice: number;
   currentChangePercent: number;
 
-  // k = 2 (连续2个交易日) 复利偏离逆推
+  // 逐日历史与当日涨跌幅明细 (%)
+  stockReturnT2Percent: number; // T-2 日个股涨幅 (%)
+  stockReturnT1Percent: number; // T-1 日个股涨幅 (%)
+  indexReturnT2Percent: number; // T-2 日对应基准指数涨幅 (%)
+  indexReturnT1Percent: number; // T-1 日对应基准指数涨幅 (%)
+  indexReturnTodayPercent: number; // 今日对应基准指数涨幅 (%)
+
+  // k = 2 (连续2个交易日) 实时涨跌幅与复利偏离逆推
+  stockCumReturn2DayPercent: number; // 2个交易日个股累计复利涨跌幅 (%)
+  indexCumReturn2DayPercent: number; // 2个交易日基准指数累计复利涨跌幅 (%)
   dev2DayCurrentPercent: number; // 当前实时2日累计偏离值 (%)
+  windowSaturation2DayPercent: number; // 2日异动窗口额度占用率 (0 ~ 100+%)
   maxSafeChange2DayPercent: number; // 今日不触发2日异动的极限安全涨幅 (%)
   triggerPrice2Day: number; // 触发2日异动的精确临界价 (元)
 
-  // k = 3 (连续3个交易日) 复利偏离逆推
+  // k = 3 (连续3个交易日) 实时涨跌幅与复利偏离逆推
+  stockCumReturn3DayPercent: number; // 3个交易日个股累计复利涨跌幅 (%)
+  indexCumReturn3DayPercent: number; // 3个交易日基准指数累计复利涨跌幅 (%)
   dev3DayCurrentPercent: number; // 当前实时3日累计偏离值 (%)
+  windowSaturation3DayPercent: number; // 3日异动窗口额度占用率 (0 ~ 100+%)
   maxSafeChange3DayPercent: number; // 今日不触发3日异动的极限安全涨幅 (%)
   triggerPrice3Day: number; // 触发3日异动的精确临界价 (元)
 
@@ -408,13 +425,36 @@ export interface RegulatoryDeviationResult {
   bindingWindowK: 2 | 3;
   effectiveTriggerPrice: number; // min(triggerPrice2Day, triggerPrice3Day)
   effectiveMaxSafeChangePercent: number; // 综合安全涨幅上限 (%)
+  remainingSafeMarginPercent: number; // 距离今日触线临界涨幅的剩余安全余量 (%)
   isTriggeredToday: boolean; // 当前价格是否已触及或突破 k∈{2,3} 法定异动线
 
-  // 10日 100% 严重异动与特停锁死预警
+  // 10日 100% 严重异动与 10日 4次同向异动特停锁死预警
   cumDeviation10dPercent: number; // 实时10日累计偏离值 (%)
   remainingTo100Percent: number; // 距离 100% 严重异动红线剩余空间 (%)
+  abnormalCount10d: number; // 近10个交易日已触发异动次数 (满4次触发严重异动)
+  remainingAbnormalTimes10d: number; // 距10日4次严重异动剩余次数
   severeSuspensionLockWarning: boolean; // 是否触发严重异动/特停锁死高危预警
+  suspensionRiskScore: number; // 特停风险综合指数 (0 ~ 100)
+
+  // 红黄绿信号灯预警体系
+  alertLight: RegulatoryAlertLight; // 'RED' | 'YELLOW' | 'GREEN'
+  alertLightLabel: '红灯 · 特停/触线高危' | '黄灯 · 异动压线临界' | '绿灯 · 安全运行区间';
+  alertLightReason: string;
+  tacticalPlaybook: string;
   statusSummary: string;
+}
+
+/**
+ * 全市场监管异动监测汇总结果
+ */
+export interface RegulatoryMonitorOverview {
+  items: RegulatoryDeviationResult[];
+  redLightCount: number;
+  yellowLightCount: number;
+  greenLightCount: number;
+  suspensionWarningCount: number;
+  triggeredTodayCount: number;
+  highestRiskStock: RegulatoryDeviationResult | null;
 }
 
 /**

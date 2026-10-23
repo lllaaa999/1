@@ -26,6 +26,7 @@ import {
   getSignedColorClass,
 } from '../utils/marketCalc';
 import {
+  analyzeMarketRegulatoryOverview,
   analyzeMarketThemeResonance,
   analyzeStockDragonTigerList,
   calculateAuctionRadar,
@@ -37,6 +38,7 @@ import {
   type LadderScenarioPreset,
 } from '../utils/ultraShortQuant';
 import { DragonTigerNetworkGraph } from './DragonTigerNetworkGraph';
+import { RegulatoryMonitorPanel } from './RegulatoryMonitorPanel';
 import { ThemeResonanceMonitorPanel } from './ThemeResonanceMonitorPanel';
 
 function getAuctionSignalBadgeClass(signal: AuctionSignalType): string {
@@ -175,25 +177,35 @@ export const UltraShortStockDiagnosticStrip: React.FC = () => {
             </button>
           )}
 
-          {/* 4. 注册制法定复利异动逆推 (k ∈ {2, 3}) */}
+          {/* 4. 监管异动监测 (k ∈ {2, 3} 异动窗口与红黄灯预警) */}
           <button
             type="button"
             onClick={() => openQuantModule('regulatory')}
             className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-              reg.severeSuspensionLockWarning || reg.isTriggeredToday
+              reg.alertLight === 'RED'
+                ? 'bg-[#F6465D]/15 border-[#F6465D]/50 text-[#F6465D]'
+                : reg.alertLight === 'YELLOW'
                 ? 'bg-[#F59E0B]/15 border-[#F59E0B]/50 text-[#F59E0B]'
                 : 'bg-[#1e222d] hover:bg-[#262b38] border-[#2a2e39] text-[#d1d4dc]'
             }`}
           >
-            <Scale className="w-3.5 h-3.5 text-[#F59E0B]" />
-            <span className="text-[#787b86]">k∈&#123;2,3&#125;异动红线:</span>
+            <span
+              className={`w-2 h-2 rounded-full ${
+                reg.alertLight === 'RED'
+                  ? 'bg-[#F6465D] shadow-[0_0_6px_#F6465D]'
+                  : reg.alertLight === 'YELLOW'
+                  ? 'bg-[#F59E0B] shadow-[0_0_6px_#F59E0B]'
+                  : 'bg-[#0ECB81]'
+              }`}
+            />
+            <span className="text-[#787b86]">监管异动监测:</span>
             <span className="font-mono tabular-nums font-semibold">
               {formatPrice(reg.effectiveTriggerPrice)}元 (
               {formatSignedPercent(reg.effectiveMaxSafeChangePercent)})
             </span>
             {reg.severeSuspensionLockWarning && (
               <span className="px-1 rounded bg-[#F6465D] text-white text-[10px] font-bold">
-                10日{reg.cumDeviation10dPercent}%特停预警
+                红灯·10日{reg.cumDeviation10dPercent}%
               </span>
             )}
           </button>
@@ -304,7 +316,7 @@ export const UltraShortQuantWorkbench: React.FC<{ compact?: boolean }> = ({
     [allQuotes, themeScenario]
   );
 
-  // 4. 注册制法定复利异动监管逆推 (k ∈ {2, 3})
+  // 4. 监管异动监测 (2/3日涨跌幅实时监控、k ∈ {2, 3} 法定异动窗口与红黄灯特停预警)
   const activeRegDeviation = useMemo(
     () =>
       activeQuote
@@ -316,16 +328,12 @@ export const UltraShortQuantWorkbench: React.FC<{ compact?: boolean }> = ({
     [activeQuote, simulatedIndexPct]
   );
 
-  const allRegDeviations = useMemo(
+  const regulatoryOverview = useMemo(
     () =>
-      allQuotes
-        .map((q) =>
-          calculateRegulatoryDeviation(
-            q,
-            simulatedIndexPct !== null ? simulatedIndexPct : undefined
-          )
-        )
-        .sort((a, b) => b.cumDeviation10dPercent - a.cumDeviation10dPercent),
+      analyzeMarketRegulatoryOverview(
+        allQuotes,
+        simulatedIndexPct !== null ? simulatedIndexPct : undefined
+      ),
     [allQuotes, simulatedIndexPct]
   );
 
@@ -358,7 +366,7 @@ export const UltraShortQuantWorkbench: React.FC<{ compact?: boolean }> = ({
     { id: 'ladder', label: '连板梯队与断层', shortLabel: '连板梯队' },
     { id: 'dragon_tiger', label: '龙虎榜席位分析', shortLabel: '龙虎榜' },
     { id: 'resonance', label: '板块/题材共振监测', shortLabel: '题材共振' },
-    { id: 'regulatory', label: 'k∈{2,3} 异动逆推', shortLabel: '异动逆推' },
+    { id: 'regulatory', label: '监管异动监测', shortLabel: '监管监测' },
     { id: 'vwdvr', label: 'VW-DVR 承接算子', shortLabel: 'VW-DVR' },
   ];
 
@@ -1047,278 +1055,18 @@ export const UltraShortQuantWorkbench: React.FC<{ compact?: boolean }> = ({
           />
         )}
 
-        {/* ==================== 模块四：现行注册制法定复利异动监管逆推 (k ∈ {2, 3}) ==================== */}
+        {/* ==================== 模块四：监管异动监测 (2/3日涨跌幅实时监控、法定异动窗口与红黄灯特停预警) ==================== */}
         {(quantModuleTab === 'overview' || quantModuleTab === 'regulatory') &&
           activeRegDeviation && (
-            <section
-              aria-label="现行注册制法定复利异动监管逆推"
-              className="bg-[#1e222d] border border-[#2a2e39] rounded-md overflow-hidden"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-[#131722] border-b border-[#2a2e39]">
-                <div className="flex items-center gap-2">
-                  <Scale className="w-4 h-4 text-[#F59E0B]" />
-                  <h2 className="text-xs sm:text-sm font-bold text-white">
-                    现行注册制法定复利异动监管逆推 (k ∈ &#123;2, 3&#125; 法定异动窗口 & 10日100%特停锁死预警)
-                  </h2>
-                </div>
-
-                {/* 交互式基准指数今日涨跌幅推演控制器 */}
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-[#9ca3af] whitespace-nowrap">
-                    基准指数涨幅推演:
-                  </span>
-                  <input
-                    type="range"
-                    aria-label="基准指数今日涨跌幅推演滑块"
-                    min={-3.0}
-                    max={5.0}
-                    step={0.1}
-                    value={
-                      simulatedIndexPct ??
-                      activeQuote.ultraShort?.indexReturnToday ??
-                      1.05
-                    }
-                    onChange={(e) => setSimulatedIndexPct(Number(e.target.value))}
-                    className="w-24 accent-[#2962ff] cursor-pointer"
-                  />
-                  <span className="font-mono tabular-nums font-bold text-[#38bdf8] w-14 text-right">
-                    {formatSignedPercent(
-                      simulatedIndexPct ??
-                        activeQuote.ultraShort?.indexReturnToday ??
-                        1.05
-                    )}
-                  </span>
-                  {simulatedIndexPct !== null && (
-                    <button
-                      type="button"
-                      onClick={() => setSimulatedIndexPct(null)}
-                      className="px-1.5 py-0.5 rounded bg-[#1e222d] border border-[#2a2e39] text-[10px] text-[#9ca3af] hover:text-white cursor-pointer"
-                    >
-                      重置实盘
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* 当前选中股票的精确逆推面板 */}
-              <div className="p-3 bg-[#161a24] border-b border-[#2a2e39]">
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-bold text-white">
-                      当前算子标的：{activeRegDeviation.name} ({activeRegDeviation.symbol})
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-[#2962ff]/20 border border-[#2962ff]/40 text-[11px] font-mono tabular-nums text-[#38bdf8]">
-                      法定阈值 ±{activeRegDeviation.ruleThresholdPercent}% (
-                      {activeRegDeviation.ruleThresholdPercent === 30
-                        ? '创业板/科创板注册制'
-                        : '沪深主板注册制'}
-                      )
-                    </span>
-                  </div>
-                  <span
-                    className={`text-xs font-semibold ${
-                      activeRegDeviation.severeSuspensionLockWarning ||
-                      activeRegDeviation.isTriggeredToday
-                        ? 'text-[#F59E0B]'
-                        : 'text-[#0ECB81]'
-                    }`}
-                  >
-                    {activeRegDeviation.statusSummary}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 text-xs">
-                  {/* k = 2 窗口 */}
-                  <div className="p-2.5 rounded bg-[#1e222d] border border-[#2a2e39]">
-                    <div className="flex items-center justify-between text-[11px] text-[#787b86] whitespace-nowrap">
-                      <span>k = 2 (2日复利窗口)</span>
-                      {activeRegDeviation.bindingWindowK === 2 && (
-                        <span className="text-[#F59E0B] font-semibold">[主约束]</span>
-                      )}
-                    </div>
-                    <div className="mt-1.5 flex items-baseline justify-between font-mono tabular-nums whitespace-nowrap">
-                      <span className="text-[#9ca3af]">当前2日偏离:</span>
-                      <span className="text-sm font-bold text-white">
-                        {formatSignedPercent(activeRegDeviation.dev2DayCurrentPercent)}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums whitespace-nowrap">
-                      <span className="text-[#9ca3af]">k=2 临界价:</span>
-                      <span className="text-xs font-bold text-[#F6465D]">
-                        {formatPrice(activeRegDeviation.triggerPrice2Day)}元 (
-                        {formatSignedPercent(activeRegDeviation.maxSafeChange2DayPercent)})
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* k = 3 窗口 */}
-                  <div className="p-2.5 rounded bg-[#1e222d] border border-[#2a2e39]">
-                    <div className="flex items-center justify-between text-[11px] text-[#787b86] whitespace-nowrap">
-                      <span>k = 3 (3日复利窗口)</span>
-                      {activeRegDeviation.bindingWindowK === 3 && (
-                        <span className="text-[#F59E0B] font-semibold">[主约束]</span>
-                      )}
-                    </div>
-                    <div className="mt-1.5 flex items-baseline justify-between font-mono tabular-nums whitespace-nowrap">
-                      <span className="text-[#9ca3af]">当前3日偏离:</span>
-                      <span className="text-sm font-bold text-white">
-                        {formatSignedPercent(activeRegDeviation.dev3DayCurrentPercent)}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums whitespace-nowrap">
-                      <span className="text-[#9ca3af]">k=3 临界价:</span>
-                      <span className="text-xs font-bold text-[#F6465D]">
-                        {formatPrice(activeRegDeviation.triggerPrice3Day)}元 (
-                        {formatSignedPercent(activeRegDeviation.maxSafeChange3DayPercent)})
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* 综合今日安全压线价 */}
-                  <div className="p-2.5 rounded bg-[#1e222d] border border-[#F59E0B]/40">
-                    <div className="text-[11px] text-[#F59E0B] whitespace-nowrap">
-                      今日绕异动安全上限 (min k∈&#123;2,3&#125;)
-                    </div>
-                    <div className="mt-1.5 flex items-baseline justify-between font-mono tabular-nums whitespace-nowrap">
-                      <span className="text-[#9ca3af]">压线临界价:</span>
-                      <span className="text-base font-bold text-[#F59E0B]">
-                        {formatPrice(activeRegDeviation.effectiveTriggerPrice)} 元
-                      </span>
-                    </div>
-                    <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums whitespace-nowrap">
-                      <span className="text-[#9ca3af]">安全最高涨幅:</span>
-                      <span className="text-xs font-bold text-white">
-                        {formatSignedPercent(
-                          activeRegDeviation.effectiveMaxSafeChangePercent
-                        )}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* 10日 100% 严重异动与特停锁死监控 */}
-                  <div
-                    className={`p-2.5 rounded border ${
-                      activeRegDeviation.severeSuspensionLockWarning
-                        ? 'bg-[#F6465D]/15 border-[#F6465D]'
-                        : 'bg-[#1e222d] border-[#2a2e39]'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between text-[11px] whitespace-nowrap">
-                      <span className="text-[#787b86]">10日100%特停红线</span>
-                      <ShieldAlert
-                        className={`w-3.5 h-3.5 ${
-                          activeRegDeviation.severeSuspensionLockWarning
-                            ? 'text-[#F6465D]'
-                            : 'text-[#787b86]'
-                        }`}
-                      />
-                    </div>
-                    <div className="mt-1.5 flex items-baseline justify-between font-mono tabular-nums whitespace-nowrap">
-                      <span className="text-[#9ca3af]">10日累计偏离:</span>
-                      <span className="text-sm font-bold text-[#F6465D]">
-                        +{activeRegDeviation.cumDeviation10dPercent.toFixed(2)}%
-                      </span>
-                    </div>
-                    <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums whitespace-nowrap">
-                      <span className="text-[#9ca3af]">距100%特停余量:</span>
-                      <span className="text-xs font-bold text-white">
-                        {activeRegDeviation.remainingTo100Percent.toFixed(2)}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* 全市场标的异动红线速查表 */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="border-b border-[#2a2e39] text-[#787b86] bg-[#161a24] text-[11px]">
-                      <th className="py-2 px-2.5 whitespace-nowrap">股票标的</th>
-                      <th className="py-2 px-2 text-right whitespace-nowrap">现价 / 涨幅</th>
-                      <th className="py-2 px-2 text-center whitespace-nowrap">红线</th>
-                      <th className="py-2 px-2 text-right whitespace-nowrap">
-                        k=2 偏离 / 临界价
-                      </th>
-                      <th className="py-2 px-2 text-right whitespace-nowrap">
-                        k=3 偏离 / 临界价
-                      </th>
-                      <th className="py-2 px-2 text-right whitespace-nowrap">
-                        今日绕监管极限安全价
-                      </th>
-                      <th className="py-2 px-2.5 text-right whitespace-nowrap">
-                        10日偏离 (100%特停线)
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#2a2e39]/60">
-                    {allRegDeviations.map((row) => (
-                      <tr
-                        key={row.symbol}
-                        onClick={() => setSelectedSymbol(row.symbol)}
-                        className={`cursor-pointer transition-colors ${
-                          row.symbol === selectedSymbol
-                            ? 'bg-[#2962ff]/15'
-                            : 'hover:bg-[#262b38]'
-                        }`}
-                      >
-                        <td className="py-2 px-2.5 whitespace-nowrap">
-                          <span className="font-semibold text-white">{row.name}</span>
-                          <span className="ml-1 font-mono tabular-nums text-[10px] text-[#787b86]">
-                            {row.code}
-                          </span>
-                        </td>
-                        <td
-                          className={`py-2 px-2 text-right font-mono tabular-nums font-semibold whitespace-nowrap ${getSignedColorClass(
-                            row.currentChangePercent
-                          )}`}
-                        >
-                          {formatPrice(row.currentPrice)} (
-                          {formatSignedPercent(row.currentChangePercent)})
-                        </td>
-                        <td className="py-2 px-2 text-center font-mono tabular-nums text-[#9ca3af] whitespace-nowrap">
-                          ±{row.ruleThresholdPercent}%
-                        </td>
-                        <td className="py-2 px-2 text-right font-mono tabular-nums whitespace-nowrap">
-                          <span className="text-white">
-                            {formatSignedPercent(row.dev2DayCurrentPercent)}
-                          </span>{' '}
-                          <span className="text-[#787b86]">
-                            / {formatPrice(row.triggerPrice2Day)}
-                          </span>
-                        </td>
-                        <td className="py-2 px-2 text-right font-mono tabular-nums whitespace-nowrap">
-                          <span className="text-white">
-                            {formatSignedPercent(row.dev3DayCurrentPercent)}
-                          </span>{' '}
-                          <span className="text-[#787b86]">
-                            / {formatPrice(row.triggerPrice3Day)}
-                          </span>
-                        </td>
-                        <td className="py-2 px-2 text-right font-mono tabular-nums font-bold text-[#F59E0B] whitespace-nowrap">
-                          {formatPrice(row.effectiveTriggerPrice)}元 (
-                          {formatSignedPercent(row.effectiveMaxSafeChangePercent)})
-                        </td>
-                        <td className="py-2 px-2.5 text-right font-mono tabular-nums whitespace-nowrap">
-                          <span
-                            className={
-                              row.severeSuspensionLockWarning
-                                ? 'text-[#F6465D] font-bold'
-                                : 'text-[#d1d4dc]'
-                            }
-                          >
-                            +{row.cumDeviation10dPercent.toFixed(2)}%
-                          </span>
-                          <span className="text-[10px] text-[#787b86] ml-1">
-                            (余{row.remainingTo100Percent.toFixed(1)}%)
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
+            <RegulatoryMonitorPanel
+              overview={regulatoryOverview}
+              activeRegDeviation={activeRegDeviation}
+              selectedSymbol={selectedSymbol}
+              onSelectSymbol={setSelectedSymbol}
+              simulatedIndexPct={simulatedIndexPct}
+              defaultIndexPct={activeQuote?.ultraShort?.indexReturnToday ?? 1.05}
+              onChangeSimulatedIndexPct={setSimulatedIndexPct}
+            />
           )}
 
         {/* ==================== 模块五：真实成交量加权承接算子 (VW-DVR) ==================== */}

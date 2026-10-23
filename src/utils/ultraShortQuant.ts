@@ -18,7 +18,9 @@ import type {
   IntradayPoint,
   LadderDistributionRow,
   LadderFaultZone,
+  RegulatoryAlertLight,
   RegulatoryDeviationResult,
+  RegulatoryMonitorOverview,
   ThemeAttackRole,
   ThemeResonanceItem,
   ThemeResonanceOverview,
@@ -1490,23 +1492,37 @@ export function calculateRegulatoryDeviation(
     quote.code.startsWith('688');
 
   const ruleThresholdPercent = is30Rule ? 30 : 20;
+  const boardRuleLabel = is30Rule ? '创业板/科创板 ±30%' : '沪深主板 ±20%';
   const T = ruleThresholdPercent / 100;
 
-  const rS1 = (us?.stockReturnT1 ?? 5.2) / 100;
-  const rS2 = (us?.stockReturnT2 ?? 4.8) / 100;
-  const rM1 = (us?.indexReturnT1 ?? 0.65) / 100;
-  const rM2 = (us?.indexReturnT2 ?? 0.42) / 100;
-  const rMToday =
+  const stockReturnT1Percent = Number((us?.stockReturnT1 ?? 5.2).toFixed(2));
+  const stockReturnT2Percent = Number((us?.stockReturnT2 ?? 4.8).toFixed(2));
+  const indexReturnT1Percent = Number((us?.indexReturnT1 ?? 0.65).toFixed(2));
+  const indexReturnT2Percent = Number((us?.indexReturnT2 ?? 0.42).toFixed(2));
+  const indexReturnTodayPercent = Number(
     (indexOverrideTodayPct !== undefined
       ? indexOverrideTodayPct
-      : us?.indexReturnToday ?? 1.15) / 100;
+      : us?.indexReturnToday ?? 1.15
+    ).toFixed(2)
+  );
+
+  const rS1 = stockReturnT1Percent / 100;
+  const rS2 = stockReturnT2Percent / 100;
+  const rM1 = indexReturnT1Percent / 100;
+  const rM2 = indexReturnT2Percent / 100;
+  const rMToday = indexReturnTodayPercent / 100;
 
   const rSToday = (quote.price - quote.prevClose) / quote.prevClose;
 
   // 1. k = 2 (连续2个交易日窗口：T-1 与 Today)
   const stockCum2 = (1 + rS1) * (1 + rSToday) - 1;
   const indexCum2 = (1 + rM1) * (1 + rMToday) - 1;
+  const stockCumReturn2DayPercent = Number((stockCum2 * 100).toFixed(2));
+  const indexCumReturn2DayPercent = Number((indexCum2 * 100).toFixed(2));
   const dev2DayCurrentPercent = Number(((stockCum2 - indexCum2) * 100).toFixed(2));
+  const windowSaturation2DayPercent = Number(
+    Math.max(0, (Math.abs(dev2DayCurrentPercent) / ruleThresholdPercent) * 100).toFixed(1)
+  );
 
   // 逆推 k=2 今日触发异动的临界涨幅
   const maxSafeFactor2 = (1 + T + indexCum2) / Math.max(0.1, 1 + rS1);
@@ -1517,7 +1533,12 @@ export function calculateRegulatoryDeviation(
   const stockPrior2 = (1 + rS2) * (1 + rS1);
   const stockCum3 = stockPrior2 * (1 + rSToday) - 1;
   const indexCum3 = (1 + rM2) * (1 + rM1) * (1 + rMToday) - 1;
+  const stockCumReturn3DayPercent = Number((stockCum3 * 100).toFixed(2));
+  const indexCumReturn3DayPercent = Number((indexCum3 * 100).toFixed(2));
   const dev3DayCurrentPercent = Number(((stockCum3 - indexCum3) * 100).toFixed(2));
+  const windowSaturation3DayPercent = Number(
+    Math.max(0, (Math.abs(dev3DayCurrentPercent) / ruleThresholdPercent) * 100).toFixed(1)
+  );
 
   // 逆推 k=3 今日触发异动的临界涨幅
   const maxSafeFactor3 = (1 + T + indexCum3) / Math.max(0.1, stockPrior2);
@@ -1531,26 +1552,94 @@ export function calculateRegulatoryDeviation(
     maxSafeChange2DayPercent,
     maxSafeChange3DayPercent
   );
+  const remainingSafeMarginPercent = Number(
+    Math.max(0, effectiveMaxSafeChangePercent - quote.changePercent).toFixed(2)
+  );
 
   const isTriggeredToday =
     dev2DayCurrentPercent >= ruleThresholdPercent ||
     dev3DayCurrentPercent >= ruleThresholdPercent ||
     quote.price >= effectiveTriggerPrice;
 
-  // 4. 10日 100% 严重异动与停牌核查（特停）锁死预警
+  // 4. 10日 100% 严重异动与 10日 4次同向异动停牌核查（特停）锁死预警
   const base10d = us?.cumDeviation10d ?? 42.5;
   const todayNetDev = quote.changePercent - rMToday * 100;
   const cumDeviation10dPercent = Number(Math.max(0, base10d + todayNetDev).toFixed(2));
   const remainingTo100Percent = Number(Math.max(0, 100 - cumDeviation10dPercent).toFixed(2));
   const abnormalCount10d = us?.abnormalCount10d ?? 0;
+  const remainingAbnormalTimes10d = Math.max(0, 4 - abnormalCount10d - (isTriggeredToday ? 1 : 0));
 
   const severeSuspensionLockWarning =
     remainingTo100Percent <= 14.0 || abnormalCount10d >= 3;
 
-  let statusSummary = `距 k=${bindingWindowK} 法定${ruleThresholdPercent}%异动线还差 ${Math.max(
-    0,
-    effectiveMaxSafeChangePercent - quote.changePercent
-  ).toFixed(2)}% (临界价 ${effectiveTriggerPrice.toFixed(2)}元)`;
+  // 综合特停风险评分 (0 ~ 100)
+  const maxWindowSat = Math.max(windowSaturation2DayPercent, windowSaturation3DayPercent);
+  const suspensionRiskScore = Number(
+    Math.min(
+      99.5,
+      Math.max(
+        8,
+        cumDeviation10dPercent * 0.55 +
+          abnormalCount10d * 11 +
+          Math.min(100, maxWindowSat) * 0.25 +
+          (severeSuspensionLockWarning ? 15 : 0)
+      )
+    ).toFixed(1)
+  );
+
+  // 5. 红黄绿三色交通信号灯判定
+  let alertLight: RegulatoryAlertLight = 'GREEN';
+  let alertLightLabel: RegulatoryDeviationResult['alertLightLabel'] = '绿灯 · 安全运行区间';
+  let alertLightReason = `k=${bindingWindowK} 窗口占用 ${maxWindowSat.toFixed(
+    1
+  )}%，距异动线余量 ${remainingSafeMarginPercent}%，10日偏离 ${cumDeviation10dPercent}% 处于安全区间`;
+  let tacticalPlaybook = `当前距离 k=${bindingWindowK} 法定异动临界价 (${effectiveTriggerPrice.toFixed(
+    2
+  )}元) 空间充裕，可按盘口承接与题材主线节奏正常博弈。`;
+
+  if (severeSuspensionLockWarning || isTriggeredToday) {
+    alertLight = 'RED';
+    alertLightLabel = '红灯 · 特停/触线高危';
+    if (severeSuspensionLockWarning && isTriggeredToday) {
+      alertLightReason = `已突破 k=${bindingWindowK} 法定${ruleThresholdPercent}%异动线，且10日偏离达 ${cumDeviation10dPercent}% (近10日已${abnormalCount10d}次异动)，逼近100%严重异动/4次同向异动特停红线！`;
+      tacticalPlaybook = `【极高危特停锁死预警】若今日封死涨停将触发严重异动或第4次异动监管重点监控，游资主封资金极易在尾盘主动漏单控涨幅（压在 ${effectiveTriggerPrice.toFixed(
+        2
+      )}元 下方），切勿盲目满仓排队顶一字！`;
+    } else if (severeSuspensionLockWarning) {
+      alertLightReason = `10日累计偏离高达 ${cumDeviation10dPercent}% (距100%红线仅剩 ${remainingTo100Percent}%，近10日已${abnormalCount10d}次异动)，处于特停重点监控高危区！`;
+      tacticalPlaybook = `【严重异动压线博弈】主力资金大概率采取“断板换手压涨幅”策略，严格控制收盘价低于 ${effectiveTriggerPrice.toFixed(
+        2
+      )}元 (${effectiveMaxSafeChangePercent > 0 ? '+' : ''}${effectiveMaxSafeChangePercent}%) 以绕开第4次异动与100%严重异动。`;
+    } else {
+      alertLightReason = `今日实时${bindingWindowK}日偏离达 ${Math.max(
+        dev2DayCurrentPercent,
+        dev3DayCurrentPercent
+      ).toFixed(2)}% (≥${ruleThresholdPercent}%阈值)，已触发普通异动龙虎榜披露条件。`;
+      tacticalPlaybook = `【今日已触及普通异动】盘后将公布3日/2日龙虎榜席位明细；当前10日累计偏离 ${cumDeviation10dPercent}% 尚有 ${remainingTo100Percent}% 缓冲空间，重点观察封单稳定性与次日溢价。`;
+    }
+  } else if (
+    remainingSafeMarginPercent <= 4.5 ||
+    maxWindowSat >= 75 ||
+    cumDeviation10dPercent >= 62 ||
+    abnormalCount10d >= 2
+  ) {
+    alertLight = 'YELLOW';
+    alertLightLabel = '黄灯 · 异动压线临界';
+    alertLightReason = `主约束 k=${bindingWindowK} 窗口饱和度已达 ${maxWindowSat.toFixed(
+      1
+    )}%，距触发异动临界价 ${effectiveTriggerPrice.toFixed(
+      2
+    )}元 仅差 ${remainingSafeMarginPercent}% 涨幅！`;
+    tacticalPlaybook = `【异动压线临界区】今日若冲高至 ${effectiveTriggerPrice.toFixed(
+      2
+    )}元 (${
+      effectiveMaxSafeChangePercent > 0 ? '+' : ''
+    }${effectiveMaxSafeChangePercent}%) 将触发 k=${bindingWindowK} 异动，关注主力是选择“压线收盘绕监管”还是“暴力封板硬顶异动”。`;
+  }
+
+  let statusSummary = `距 k=${bindingWindowK} 法定${ruleThresholdPercent}%异动线还差 ${remainingSafeMarginPercent.toFixed(
+    2
+  )}% (临界价 ${effectiveTriggerPrice.toFixed(2)}元)`;
 
   if (severeSuspensionLockWarning && isTriggeredToday) {
     statusSummary = `【高危特停锁死预警】已触及 k=${bindingWindowK} 异动且10日偏离达 ${cumDeviation10dPercent}% (距100%红线仅剩 ${remainingTo100Percent}%)`;
@@ -1569,23 +1658,78 @@ export function calculateRegulatoryDeviation(
     symbol: quote.symbol,
     code: quote.code,
     name: quote.name,
+    sector: quote.sector,
     ruleThresholdPercent,
+    boardRuleLabel,
     currentPrice: quote.price,
     currentChangePercent: quote.changePercent,
+    stockReturnT2Percent,
+    stockReturnT1Percent,
+    indexReturnT2Percent,
+    indexReturnT1Percent,
+    indexReturnTodayPercent,
+    stockCumReturn2DayPercent,
+    indexCumReturn2DayPercent,
     dev2DayCurrentPercent,
+    windowSaturation2DayPercent,
     maxSafeChange2DayPercent,
     triggerPrice2Day,
+    stockCumReturn3DayPercent,
+    indexCumReturn3DayPercent,
     dev3DayCurrentPercent,
+    windowSaturation3DayPercent,
     maxSafeChange3DayPercent,
     triggerPrice3Day,
     bindingWindowK,
     effectiveTriggerPrice,
     effectiveMaxSafeChangePercent,
+    remainingSafeMarginPercent,
     isTriggeredToday,
     cumDeviation10dPercent,
     remainingTo100Percent,
+    abnormalCount10d,
+    remainingAbnormalTimes10d,
     severeSuspensionLockWarning,
+    suspensionRiskScore,
+    alertLight,
+    alertLightLabel,
+    alertLightReason,
+    tacticalPlaybook,
     statusSummary,
+  };
+}
+
+/**
+ * 全市场个股监管异动与红黄灯特停风险汇总算子
+ */
+export function analyzeMarketRegulatoryOverview(
+  quotes: TickData[],
+  indexOverrideTodayPct?: number
+): RegulatoryMonitorOverview {
+  const items = quotes
+    .map((q) => calculateRegulatoryDeviation(q, indexOverrideTodayPct))
+    .sort((a, b) => {
+      const rank = { RED: 3, YELLOW: 2, GREEN: 1 };
+      if (rank[b.alertLight] !== rank[a.alertLight]) {
+        return rank[b.alertLight] - rank[a.alertLight];
+      }
+      return b.suspensionRiskScore - a.suspensionRiskScore;
+    });
+
+  const redLightCount = items.filter((i) => i.alertLight === 'RED').length;
+  const yellowLightCount = items.filter((i) => i.alertLight === 'YELLOW').length;
+  const greenLightCount = items.filter((i) => i.alertLight === 'GREEN').length;
+  const suspensionWarningCount = items.filter((i) => i.severeSuspensionLockWarning).length;
+  const triggeredTodayCount = items.filter((i) => i.isTriggeredToday).length;
+
+  return {
+    items,
+    redLightCount,
+    yellowLightCount,
+    greenLightCount,
+    suspensionWarningCount,
+    triggeredTodayCount,
+    highestRiskStock: items[0] ?? null,
   };
 }
 
