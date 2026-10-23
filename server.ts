@@ -232,24 +232,37 @@ async function startServer() {
 
   const server = http.createServer(app);
 
-  // 4. WebSocket 服务端 (使用 noServer 模式精准接管 upgrade，避免 ws 库拦截非 /ws 升级请求导致 @vite/client 报错)
+  // 4. WebSocket 服务端 (使用 noServer 模式精准接管 upgrade，并为 @vite/client 协商 vite-hmr 子协议，彻底杜绝 WebSocket closed without opened)
   const wss = new WebSocketServer({ noServer: true });
-  const viteHmrWss = new WebSocketServer({ noServer: true });
+  const viteHmrWss = new WebSocketServer({
+    noServer: true,
+    handleProtocols: (protocols) => {
+      if (protocols.has('vite-hmr')) return 'vite-hmr';
+      const first = protocols.values().next().value;
+      return first || false;
+    },
+  });
 
   viteHmrWss.on('connection', (ws: WebSocket) => {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'connected' }));
     }
+    ws.on('error', () => {
+      // 忽略客户端断开异常
+    });
   });
 
   server.on('upgrade', (req, socket, head) => {
+    socket.on('error', () => {
+      // 防止升级套接字异常导致未捕获错误
+    });
     const pathname = req.url ? req.url.split('?')[0] : '/';
     if (pathname === '/ws') {
       wss.handleUpgrade(req, socket, head, (ws) => {
         wss.emit('connection', ws, req);
       });
     } else {
-      // 兼容任何来自 @vite/client 的 HMR WebSocket 握手请求，防止出现 "WebSocket closed without opened"
+      // 兼容任何来自 @vite/client 的 HMR WebSocket 握手请求
       viteHmrWss.handleUpgrade(req, socket, head, (ws) => {
         viteHmrWss.emit('connection', ws, req);
       });

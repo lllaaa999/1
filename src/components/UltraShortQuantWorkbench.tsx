@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeft,
+  Building2,
   Flame,
   Layers,
   Radar,
@@ -12,7 +13,12 @@ import {
 } from 'lucide-react';
 import { generateIntradayForSymbol } from '../data/seedMarket';
 import { useMarketStore } from '../store/useMarketStore';
-import type { AuctionSignalType } from '../types/market';
+import type {
+  AuctionSignalType,
+  DragonTigerPresetMode,
+  DragonTigerSeatNature,
+  ThemeResonanceScenarioPreset,
+} from '../types/market';
 import {
   formatAmountCN,
   formatPrice,
@@ -20,13 +26,18 @@ import {
   getSignedColorClass,
 } from '../utils/marketCalc';
 import {
+  analyzeMarketThemeResonance,
+  analyzeStockDragonTigerList,
   calculateAuctionRadar,
   calculateBoardLadderSummary,
   calculateRegulatoryDeviation,
   calculateThemeResonance,
   calculateVWDVR,
   getDragonRoleLabel,
+  type LadderScenarioPreset,
 } from '../utils/ultraShortQuant';
+import { DragonTigerNetworkGraph } from './DragonTigerNetworkGraph';
+import { ThemeResonanceMonitorPanel } from './ThemeResonanceMonitorPanel';
 
 function getAuctionSignalBadgeClass(signal: AuctionSignalType): string {
   switch (signal) {
@@ -42,6 +53,19 @@ function getAuctionSignalBadgeClass(signal: AuctionSignalType): string {
       return 'bg-[#0ECB81]/20 text-[#0ECB81] border-[#0ECB81]/50';
     default:
       return 'bg-[#131722] text-[#9ca3af] border-[#2a2e39]';
+  }
+}
+
+function getSeatNatureBadgeClass(nature: DragonTigerSeatNature): string {
+  switch (nature) {
+    case 'HOT_MONEY':
+      return 'bg-[#F6465D]/20 text-[#F6465D] border-[#F6465D]/50';
+    case 'INSTITUTION':
+      return 'bg-[#F59E0B]/20 text-[#F59E0B] border-[#F59E0B]/50';
+    case 'QUANT_CAMP':
+      return 'bg-[#a855f7]/20 text-[#c084fc] border-[#a855f7]/50';
+    case 'RETAIL_CAMP':
+      return 'bg-[#38bdf8]/20 text-[#38bdf8] border-[#38bdf8]/50';
   }
 }
 
@@ -239,6 +263,14 @@ export const UltraShortQuantWorkbench: React.FC<{ compact?: boolean }> = ({
 
   // 竞价雷达信号过滤器
   const [auctionFilter, setAuctionFilter] = useState<'ALL' | AuctionSignalType>('ALL');
+  // 连板梯队断层监测：实盘分布 vs 极端退潮断层 vs 完整梯队推演切换
+  const [ladderScenario, setLadderScenario] = useState<LadderScenarioPreset>('live');
+  // 龙虎榜席位分析：实盘席位 vs 游资+机构共振 vs 量化扎堆 vs 拉萨接盘推演
+  const [dragonTigerPreset, setDragonTigerPreset] =
+    useState<DragonTigerPresetMode>('live');
+  // 板块/题材共振监测：实盘题材共振 vs AI+算力双主线爆发 vs 高低切轮动分化
+  const [themeScenario, setThemeScenario] =
+    useState<ThemeResonanceScenarioPreset>('live');
   // 注册制异动逆推：基准指数今日实时涨幅模拟滑块 (%)
   const [simulatedIndexPct, setSimulatedIndexPct] = useState<number | null>(null);
 
@@ -260,16 +292,16 @@ export const UltraShortQuantWorkbench: React.FC<{ compact?: boolean }> = ({
     return auctionList.filter((item) => item.signal === auctionFilter);
   }, [auctionList, auctionFilter]);
 
-  // 2. 连板梯队与断层监测
+  // 2. 连板梯队与断层监测（自动对比今日涨停分布与昨日连板基数，识别晋级断层与退潮风险）
   const ladderSummary = useMemo(
-    () => calculateBoardLadderSummary(allQuotes),
-    [allQuotes]
+    () => calculateBoardLadderSummary(allQuotes, ladderScenario),
+    [allQuotes, ladderScenario]
   );
 
-  // 3. 题材点面共振
-  const themeResonanceList = useMemo(
-    () => calculateThemeResonance(allQuotes),
-    [allQuotes]
+  // 3. 板块/题材共振监测与主流资金进攻方向分析
+  const themeResonanceOverview = useMemo(
+    () => analyzeMarketThemeResonance(allQuotes, themeScenario),
+    [allQuotes, themeScenario]
   );
 
   // 4. 注册制法定复利异动监管逆推 (k ∈ {2, 3})
@@ -310,15 +342,22 @@ export const UltraShortQuantWorkbench: React.FC<{ compact?: boolean }> = ({
       .sort((a, b) => b.vwDvrScore - a.vwDvrScore);
   }, [allQuotes]);
 
+  // 6. 龙虎榜席位性质分析 (自动解析选定股票前五买席/前五卖席及游资/机构/量化/散户阵营)
+  const activeDragonTiger = useMemo(() => {
+    if (!activeQuote) return null;
+    return analyzeStockDragonTigerList(activeQuote, dragonTigerPreset);
+  }, [activeQuote, dragonTigerPreset]);
+
   const tabs: {
     id: typeof quantModuleTab;
     label: string;
     shortLabel: string;
   }[] = [
-    { id: 'overview', label: '五维实战总览', shortLabel: '总览' },
+    { id: 'overview', label: '六维实战总览', shortLabel: '总览' },
     { id: 'auction', label: '09:25 竞价雷达', shortLabel: '09:25竞价' },
     { id: 'ladder', label: '连板梯队与断层', shortLabel: '连板梯队' },
-    { id: 'resonance', label: '题材点面共振', shortLabel: '点面共振' },
+    { id: 'dragon_tiger', label: '龙虎榜席位分析', shortLabel: '龙虎榜' },
+    { id: 'resonance', label: '板块/题材共振监测', shortLabel: '题材共振' },
     { id: 'regulatory', label: 'k∈{2,3} 异动逆推', shortLabel: '异动逆推' },
     { id: 'vwdvr', label: 'VW-DVR 承接算子', shortLabel: 'VW-DVR' },
   ];
@@ -517,317 +556,495 @@ export const UltraShortQuantWorkbench: React.FC<{ compact?: boolean }> = ({
         {(quantModuleTab === 'overview' || quantModuleTab === 'ladder') && (
           <section
             aria-label="涨跌停连板梯队与断层监测"
+            data-testid="ladder-fault-monitor-section"
             className="bg-[#1e222d] border border-[#2a2e39] rounded-md overflow-hidden"
           >
+            {/* 顶部标题栏 + 梯队断层场景沙盘切换 */}
             <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-[#131722] border-b border-[#2a2e39]">
               <div className="flex items-center gap-2">
                 <Flame className="w-4 h-4 text-[#F6465D]" />
                 <h2 className="text-xs sm:text-sm font-bold text-white">
-                  涨跌停连板梯队引擎 (最高空间板 / 首板晋级率 / 连板断层监测)
+                  连板梯队断层监测引擎 (今日涨停板分布对比 / 晋级空间断层识别 / 退潮风险预警)
                 </h2>
               </div>
-              <div className="flex items-center gap-3 text-xs font-mono tabular-nums">
-                <span className="text-[#9ca3af]">
-                  情绪周期:{' '}
-                  <strong className="text-[#F6465D] font-sans">
-                    {ladderSummary.sentimentPhase}
-                  </strong>
-                </span>
-                <span className="text-[#9ca3af]">
-                  最高空间板:{' '}
-                  <strong className="text-white">
-                    {ladderSummary.maxBoardHeight}连板 ({ladderSummary.spaceDragonName})
-                  </strong>
-                </span>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {/* 断层推演切换按钮组 */}
+                <div
+                  role="group"
+                  aria-label="连板梯队分布监测模式"
+                  className="flex items-center bg-[#1e222d] p-0.5 rounded border border-[#2a2e39] text-[11px]"
+                >
+                  <button
+                    type="button"
+                    data-testid="ladder-scenario-live"
+                    onClick={() => setLadderScenario('live')}
+                    className={`px-2 py-0.5 rounded transition-colors cursor-pointer whitespace-nowrap ${
+                      ladderScenario === 'live'
+                        ? 'bg-[#2962ff] text-white font-semibold'
+                        : 'text-[#9ca3af] hover:text-white'
+                    }`}
+                  >
+                    实盘监测 (缺5/4板)
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="ladder-scenario-severe"
+                    onClick={() => setLadderScenario('severe_ebb')}
+                    className={`px-2 py-0.5 rounded transition-colors cursor-pointer whitespace-nowrap ${
+                      ladderScenario === 'severe_ebb'
+                        ? 'bg-[#F6465D] text-white font-semibold'
+                        : 'text-[#9ca3af] hover:text-white'
+                    }`}
+                  >
+                    推演高危退潮 (缺5/4/3板)
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="ladder-scenario-healthy"
+                    onClick={() => setLadderScenario('healthy_full')}
+                    className={`px-2 py-0.5 rounded transition-colors cursor-pointer whitespace-nowrap ${
+                      ladderScenario === 'healthy_full'
+                        ? 'bg-[#0ECB81] text-[#0d0e12] font-semibold'
+                        : 'text-[#9ca3af] hover:text-white'
+                    }`}
+                  >
+                    推演完整梯队 (无断层)
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2.5 text-xs font-mono tabular-nums">
+                  <span className="text-[#9ca3af]">
+                    情绪周期:{' '}
+                    <strong
+                      className={`font-sans ${
+                        ladderSummary.ebbTideRiskLevel === 'HIGH_EBB_RISK'
+                          ? 'text-[#F6465D]'
+                          : ladderSummary.ebbTideRiskLevel === 'MEDIUM_FAULT_RISK'
+                          ? 'text-[#F59E0B]'
+                          : 'text-[#0ECB81]'
+                      }`}
+                    >
+                      {ladderSummary.sentimentPhase}
+                    </strong>
+                  </span>
+                  <span className="text-[#9ca3af]">
+                    最高标:{' '}
+                    <strong className="text-white">
+                      {ladderSummary.maxBoardHeight}连板 ({ladderSummary.spaceDragonName})
+                    </strong>
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* 核心晋级率与封板率五维仪表栏 */}
+            {/* 核心晋级率与空间断层五维仪表栏 */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 p-3 bg-[#161a24] border-b border-[#2a2e39]">
               <div className="p-2.5 rounded bg-[#1e222d] border border-[#2a2e39]">
-                <div className="text-[11px] text-[#787b86]">最高空间板高度</div>
-                <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
-                  <span className="text-lg font-bold text-[#F6465D]">
-                    {ladderSummary.maxBoardHeight} 连板
+                <div className="text-[11px] text-[#787b86] whitespace-nowrap">
+                  最高空间板 vs 次高板
+                </div>
+                <div className="mt-1 flex items-baseline justify-between gap-1 font-mono tabular-nums whitespace-nowrap">
+                  <span className="text-base font-bold text-[#F6465D]">
+                    {ladderSummary.maxBoardHeight}板 / {ladderSummary.secondMaxBoardHeight}板
                   </span>
-                  <span className="text-xs text-white font-sans">
+                  <span className="text-xs text-white font-sans truncate">
                     {ladderSummary.spaceDragonName}
                   </span>
                 </div>
               </div>
 
               <div className="p-2.5 rounded bg-[#1e222d] border border-[#2a2e39]">
-                <div className="text-[11px] text-[#787b86]">首板晋级率 (1进2)</div>
-                <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
-                  <span className="text-lg font-bold text-[#F59E0B]">
-                    {ladderSummary.firstToSecondRate.toFixed(1)}%
-                  </span>
-                  <span className="text-[11px] text-[#9ca3af]">接力试错指标</span>
+                <div className="text-[11px] text-[#787b86] whitespace-nowrap">
+                  晋级空间断层跨度
                 </div>
-              </div>
-
-              <div className="p-2.5 rounded bg-[#1e222d] border border-[#2a2e39]">
-                <div className="text-[11px] text-[#787b86]">2进3 / 高位晋级率</div>
-                <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
-                  <span className="text-lg font-bold text-[#F6465D]">
-                    {ladderSummary.secondToThirdRate.toFixed(1)}%
+                <div className="mt-1 flex items-baseline justify-between gap-1 font-mono tabular-nums whitespace-nowrap">
+                  <span
+                    className={`text-base font-bold ${
+                      ladderSummary.hasLadderFault ? 'text-[#F59E0B]' : 'text-[#0ECB81]'
+                    }`}
+                  >
+                    {ladderSummary.hasLadderFault
+                      ? `缺${ladderSummary.missingBoards.join('/')}板`
+                      : '0 断层'}
                   </span>
                   <span className="text-[11px] text-[#9ca3af]">
-                    高位 {ladderSummary.highBoardPromotionRate.toFixed(0)}%
+                    {ladderSummary.maxFaultSpan > 0
+                      ? `连缺${ladderSummary.maxFaultSpan}层`
+                      : '阶梯完整'}
                   </span>
                 </div>
               </div>
 
               <div className="p-2.5 rounded bg-[#1e222d] border border-[#2a2e39]">
-                <div className="text-[11px] text-[#787b86]">今日封板率 / 炸板</div>
-                <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
-                  <span className="text-lg font-bold text-[#F6465D]">
+                <div className="text-[11px] text-[#787b86] whitespace-nowrap">
+                  首板晋级率 (1进2)
+                </div>
+                <div className="mt-1 flex items-baseline justify-between gap-1 font-mono tabular-nums whitespace-nowrap">
+                  <span className="text-base font-bold text-[#F59E0B]">
+                    {ladderSummary.firstToSecondRate.toFixed(1)}%
+                  </span>
+                  <span className="text-[11px] text-[#9ca3af]">
+                    2进3 {ladderSummary.secondToThirdRate.toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded bg-[#1e222d] border border-[#2a2e39]">
+                <div className="text-[11px] text-[#787b86] whitespace-nowrap">
+                  今日封板率 / 炸板
+                </div>
+                <div className="mt-1 flex items-baseline justify-between gap-1 font-mono tabular-nums whitespace-nowrap">
+                  <span className="text-base font-bold text-[#F6465D]">
                     {ladderSummary.sealSuccessRate.toFixed(1)}%
                   </span>
                   <span className="text-[11px] text-[#0ECB81]">
-                    炸板 {ladderSummary.brokenBoardCount} 家
+                    炸板 {ladderSummary.brokenBoardCount}家
                   </span>
                 </div>
               </div>
 
               <div className="p-2.5 rounded bg-[#1e222d] border border-[#2a2e39]">
-                <div className="text-[11px] text-[#787b86]">跌停 / 核按钮家数</div>
-                <div className="mt-1 flex items-baseline justify-between font-mono tabular-nums">
-                  <span className="text-lg font-bold text-[#0ECB81]">
-                    {ladderSummary.limitDownCount} 家
+                <div className="text-[11px] text-[#787b86] whitespace-nowrap">
+                  退潮风险指数 / 跌停
+                </div>
+                <div className="mt-1 flex items-baseline justify-between gap-1 font-mono tabular-nums whitespace-nowrap">
+                  <span
+                    className={`text-base font-bold ${
+                      ladderSummary.ebbTideRiskScore >= 68
+                        ? 'text-[#F6465D]'
+                        : ladderSummary.ebbTideRiskScore >= 40
+                        ? 'text-[#F59E0B]'
+                        : 'text-[#0ECB81]'
+                    }`}
+                  >
+                    {ladderSummary.ebbTideRiskScore} / 100
                   </span>
-                  <span className="text-[11px] text-[#9ca3af]">亏钱效应监控</span>
+                  <span className="text-[11px] text-[#0ECB81]">
+                    跌停 {ladderSummary.limitDownCount}家
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* 连板梯队断层监测实时预警条 */}
-            {ladderSummary.hasLadderFault && (
-              <div
-                data-testid="ladder-fault-warning"
-                className="flex items-center gap-2.5 px-3 py-2 bg-[#F59E0B]/10 border-b border-[#F59E0B]/30 text-xs text-[#F59E0B]"
-              >
-                <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span className="font-medium leading-snug">
-                  {ladderSummary.faultWarningText}
+            {/* 连板梯队断层监测 & 潜在退潮风险深度预警面板 */}
+            <div
+              data-testid="ladder-ebb-risk-panel"
+              className={`p-3 border-b ${
+                ladderSummary.ebbTideRiskLevel === 'HIGH_EBB_RISK'
+                  ? 'bg-[#F6465D]/10 border-[#F6465D]/35'
+                  : ladderSummary.ebbTideRiskLevel === 'MEDIUM_FAULT_RISK'
+                  ? 'bg-[#F59E0B]/10 border-[#F59E0B]/35'
+                  : 'bg-[#0ECB81]/10 border-[#0ECB81]/30'
+              }`}
+            >
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2 pb-2.5 border-b border-[#2a2e39]/80">
+                <div className="flex items-start sm:items-center gap-2">
+                  <AlertTriangle
+                    className={`w-4 h-4 shrink-0 mt-0.5 sm:mt-0 ${
+                      ladderSummary.ebbTideRiskLevel === 'HIGH_EBB_RISK'
+                        ? 'text-[#F6465D]'
+                        : ladderSummary.ebbTideRiskLevel === 'MEDIUM_FAULT_RISK'
+                        ? 'text-[#F59E0B]'
+                        : 'text-[#0ECB81]'
+                    }`}
+                  />
+                  <span
+                    data-testid="ladder-fault-warning"
+                    className="text-xs sm:text-sm font-bold text-white leading-snug"
+                  >
+                    {ladderSummary.ebbTideWarningTitle}
+                  </span>
+                </div>
+
+                {/* 断层区间徽章与退潮风险进度条 */}
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {ladderSummary.faultZones.length > 0 ? (
+                    ladderSummary.faultZones.map((zone) => (
+                      <span
+                        key={`${zone.fromBoard}-${zone.toBoard}`}
+                        data-testid="ladder-fault-zone-badge"
+                        className="px-2 py-0.5 rounded bg-[#F59E0B]/20 border border-[#F59E0B]/50 font-mono tabular-nums text-[11px] font-semibold text-[#F59E0B]"
+                      >
+                        断层带: {zone.label}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="px-2 py-0.5 rounded bg-[#0ECB81]/20 border border-[#0ECB81]/40 font-mono tabular-nums text-[11px] font-semibold text-[#0ECB81]">
+                      1~{ladderSummary.maxBoardHeight}板梯队连续无断层
+                    </span>
+                  )}
+
+                  <div className="flex items-center gap-1.5 bg-[#131722] px-2.5 py-1 rounded border border-[#2a2e39]">
+                    <span className="text-[11px] text-[#9ca3af]">退潮风险值</span>
+                    <div className="w-20 h-2 bg-[#1e222d] rounded-full overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-200 ${
+                          ladderSummary.ebbTideRiskScore >= 68
+                            ? 'bg-[#F6465D]'
+                            : ladderSummary.ebbTideRiskScore >= 40
+                            ? 'bg-[#F59E0B]'
+                            : 'bg-[#0ECB81]'
+                        }`}
+                        style={{ width: `${ladderSummary.ebbTideRiskScore}%` }}
+                      />
+                    </div>
+                    <span className="font-mono tabular-nums text-xs font-bold text-white">
+                      {ladderSummary.ebbTideRiskScore}分
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 三维自动对比诊断明细 (空间断层扫描 / 晋级对比诊断 / 退潮传导推演) */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 mt-2.5 text-xs">
+                {ladderSummary.ebbTideRiskReasons.map((reason, idx) => (
+                  <div
+                    key={idx}
+                    className="p-2 rounded bg-[#131722]/90 border border-[#2a2e39] text-[#d1d4dc] leading-relaxed"
+                  >
+                    {reason}
+                  </div>
+                ))}
+              </div>
+
+              {/* 游资退潮防守与操作预案 */}
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded bg-[#131722] border border-[#2a2e39] text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="px-1.5 py-0.5 rounded bg-[#2962ff]/20 border border-[#2962ff]/40 text-[10px] font-bold text-[#38bdf8] whitespace-nowrap">
+                    游资应对铁律
+                  </span>
+                  <span className="text-[#d1d4dc]">{ladderSummary.tacticalPlaybook}</span>
+                </div>
+                <span className="font-mono tabular-nums text-[11px] text-[#9ca3af]">
+                  高位晋级率(≥3进4):{' '}
+                  <strong
+                    className={
+                      ladderSummary.highBoardPromotionRate < 25
+                        ? 'text-[#0ECB81]'
+                        : 'text-[#F6465D]'
+                    }
+                  >
+                    {ladderSummary.highBoardPromotionRate.toFixed(1)}%
+                  </strong>
                 </span>
               </div>
-            )}
+            </div>
 
-            {/* 完整阶梯金字塔（包含断层空缺行可视化） */}
-            <div className="divide-y divide-[#2a2e39]">
-              {Array.from(
-                { length: ladderSummary.maxBoardHeight },
-                (_, idx) => ladderSummary.maxBoardHeight - idx
-              ).map((boardNum) => {
-                const tier = ladderSummary.tiers.find((t) => t.boardCount === boardNum);
-                const isMissing = !tier || tier.stocks.length === 0;
+            {/* 今日涨停板分布 vs 昨日连板基数对比阶梯表 */}
+            <div className="overflow-x-auto" data-testid="ladder-distribution-table">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-[#2a2e39] text-[#787b86] bg-[#161a24] text-[11px]">
+                    <th className="py-2 px-3 whitespace-nowrap">连板身位层级</th>
+                    <th className="py-2 px-2.5 whitespace-nowrap">梯队接力状态</th>
+                    <th className="py-2 px-2.5 text-right whitespace-nowrap">
+                      昨日(N-1)板基数
+                    </th>
+                    <th className="py-2 px-2.5 text-right whitespace-nowrap">
+                      今日封板家数
+                    </th>
+                    <th className="py-2 px-2.5 text-right whitespace-nowrap">
+                      层间晋级率 / 淘汰数
+                    </th>
+                    <th className="py-2 px-3 whitespace-nowrap">
+                      今日涨停 vs 昨日基数对比条
+                    </th>
+                    <th className="py-2 px-3 whitespace-nowrap">
+                      在板核心标的 / 晋级空间断层诊断
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#2a2e39]">
+                  {ladderSummary.distributionComparison.map((row) => {
+                    const maxRefCount = Math.max(
+                      row.yesterdayCandidateCount ?? 1,
+                      row.todaySealedCount,
+                      6
+                    );
+                    const yesterdayBarPct =
+                      row.yesterdayCandidateCount !== null
+                        ? Math.min(100, Math.round((row.yesterdayCandidateCount / maxRefCount) * 100))
+                        : 0;
+                    const todayBarPct = Math.min(
+                      100,
+                      Math.round((row.todaySealedCount / maxRefCount) * 100)
+                    );
 
-                if (isMissing) {
-                  return (
-                    <div
-                      key={`board-missing-${boardNum}`}
-                      className="flex items-center justify-between px-3 py-2 bg-[#131722]/70 text-xs"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="inline-block w-24 font-mono tabular-nums font-semibold text-[#787b86]">
-                          {boardNum}连板 (断层)
-                        </span>
-                        <span className="px-2 py-0.5 rounded bg-[#F59E0B]/10 border border-[#F59E0B]/30 text-[11px] text-[#F59E0B]">
-                          断层真空区 · 昨日 {boardNum - 1} 板晋级失败
-                        </span>
-                      </div>
-                      <span className="font-mono tabular-nums text-[11px] text-[#787b86]">
-                        晋级率 0.0%
-                      </span>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div
-                    key={`board-tier-${boardNum}`}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2.5 hover:bg-[#262b38]/50"
-                  >
-                    <div className="flex items-center gap-3 shrink-0">
-                      <span className="inline-block w-28 font-mono tabular-nums font-bold text-xs text-[#F6465D]">
-                        {tier.label}
-                      </span>
-                      <span className="text-[11px] font-mono tabular-nums text-[#9ca3af]">
-                        {tier.promotionRate !== null
-                          ? `${boardNum - 1}进${boardNum} 晋级率 ${tier.promotionRate}%`
-                          : `今日首板 ${tier.todaySealedCount} 家`}
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2 flex-1 justify-end">
-                      {tier.stocks.map((st) => (
-                        <button
-                          key={st.symbol}
-                          type="button"
-                          onClick={() => setSelectedSymbol(st.symbol)}
-                          className="flex items-center gap-2 px-2.5 py-1 rounded bg-[#131722] hover:bg-[#2962ff]/20 border border-[#2a2e39] text-xs transition-colors cursor-pointer"
-                        >
-                          <span className="font-bold text-white">{st.name}</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#F6465D]/15 text-[#F6465D] font-medium">
-                            {st.sector}
+                    return (
+                      <tr
+                        key={`dist-row-${row.boardCount}`}
+                        data-testid={`ladder-tier-row-${row.boardCount}`}
+                        className={
+                          row.isFaultLevel
+                            ? 'bg-[#F59E0B]/[0.06] hover:bg-[#F59E0B]/10 transition-colors'
+                            : 'hover:bg-[#262b38]/50 transition-colors'
+                        }
+                      >
+                        {/* 1. 连板身位层级 */}
+                        <td className="py-2.5 px-3 font-mono tabular-nums font-bold whitespace-nowrap">
+                          <span
+                            className={
+                              row.isFaultLevel
+                                ? 'text-[#F59E0B]'
+                                : row.boardCount === ladderSummary.maxBoardHeight
+                                ? 'text-[#F6465D]'
+                                : 'text-white'
+                            }
+                          >
+                            {row.label}
                           </span>
-                          <span className="font-mono tabular-nums text-[11px] text-[#9ca3af]">
-                            封板 {st.firstSealTime}
+                        </td>
+
+                        {/* 2. 梯队接力状态 */}
+                        <td className="py-2.5 px-2.5 whitespace-nowrap">
+                          {row.isFaultLevel ? (
+                            <span className="px-2 py-0.5 rounded bg-[#F59E0B]/20 border border-[#F59E0B]/50 text-[11px] font-semibold text-[#F59E0B]">
+                              晋级空间断层
+                            </span>
+                          ) : row.boardCount === ladderSummary.maxBoardHeight &&
+                            ladderSummary.topDragonIsolation ? (
+                            <span className="px-2 py-0.5 rounded bg-[#F6465D]/20 border border-[#F6465D]/50 text-[11px] font-semibold text-[#F6465D]">
+                              断层之上独苗
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded bg-[#0ECB81]/15 border border-[#0ECB81]/30 text-[11px] font-medium text-[#0ECB81]">
+                              梯队传导正常
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 3. 昨日(N-1)板候选基数 */}
+                        <td className="py-2.5 px-2.5 text-right font-mono tabular-nums text-[#9ca3af] whitespace-nowrap">
+                          {row.yesterdayCandidateCount !== null
+                            ? `昨${row.boardCount - 1}板: ${row.yesterdayCandidateCount}家`
+                            : '全市场首板池'}
+                        </td>
+
+                        {/* 4. 今日封板家数 */}
+                        <td className="py-2.5 px-2.5 text-right font-mono tabular-nums font-bold whitespace-nowrap">
+                          <span
+                            className={
+                              row.isFaultLevel ? 'text-[#F59E0B]' : 'text-[#F6465D]'
+                            }
+                          >
+                            {row.todaySealedCount} 家
                           </span>
-                          <span className="font-mono tabular-nums text-[11px] text-[#F59E0B]">
-                            封单 {formatAmountCN(st.sealOrderAmount)}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
+                        </td>
+
+                        {/* 5. 层间晋级率 / 淘汰数 */}
+                        <td className="py-2.5 px-2.5 text-right font-mono tabular-nums whitespace-nowrap">
+                          {row.promotionRate !== null ? (
+                            <div>
+                              <span
+                                className={`font-bold ${
+                                  row.promotionRate === 0
+                                    ? 'text-[#F59E0B]'
+                                    : row.promotionRate >= 30
+                                    ? 'text-[#F6465D]'
+                                    : 'text-white'
+                                }`}
+                              >
+                                {row.promotionRate.toFixed(1)}%
+                              </span>
+                              <span className="ml-1.5 text-[10px] text-[#787b86]">
+                                (淘汰{row.eliminatedCount}家)
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-[#9ca3af]">首板试错发酵</span>
+                          )}
+                        </td>
+
+                        {/* 6. 今日涨停 vs 昨日基数对比条 */}
+                        <td className="py-2.5 px-2.5 w-28 whitespace-nowrap">
+                          <div className="space-y-1 w-24">
+                            {row.yesterdayCandidateCount !== null && (
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] font-mono tabular-nums text-[#787b86] w-7">
+                                  昨基
+                                </span>
+                                <div className="flex-1 h-1.5 bg-[#131722] rounded overflow-hidden">
+                                  <div
+                                    className="h-full bg-[#787b86]/60"
+                                    style={{ width: `${yesterdayBarPct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] font-mono tabular-nums text-[#9ca3af] w-7">
+                                今封
+                              </span>
+                              <div className="flex-1 h-1.5 bg-[#131722] rounded overflow-hidden">
+                                <div
+                                  className={`h-full ${
+                                    row.isFaultLevel ? 'bg-[#F59E0B]' : 'bg-[#F6465D]'
+                                  }`}
+                                  style={{
+                                    width: `${row.isFaultLevel ? 0 : Math.max(todayBarPct, 8)}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* 7. 在板核心标的 / 晋级空间断层诊断 */}
+                        <td className="py-2.5 px-3 min-w-[280px]">
+                          {row.isFaultLevel ? (
+                            <div className="flex items-center gap-2 text-xs text-[#F59E0B] whitespace-nowrap">
+                              <span className="font-semibold">
+                                断层真空区：昨 {row.yesterdayCandidateCount ?? 0} 家{' '}
+                                {row.boardCount - 1}板今日晋级 {row.boardCount}板 全部失败
+                              </span>
+                              <span className="text-[11px] text-[#9ca3af]">
+                                (警惕高位补跌退潮)
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {row.stocks.map((st) => (
+                                <button
+                                  key={st.symbol}
+                                  type="button"
+                                  onClick={() => setSelectedSymbol(st.symbol)}
+                                  className="flex items-center gap-1.5 px-2 py-1 rounded bg-[#131722] hover:bg-[#2962ff]/20 border border-[#2a2e39] text-xs transition-colors cursor-pointer whitespace-nowrap"
+                                >
+                                  <span className="font-bold text-white">{st.name}</span>
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#F6465D]/15 text-[#F6465D] font-medium">
+                                    {st.sector}
+                                  </span>
+                                  <span className="font-mono tabular-nums text-[11px] text-[#9ca3af]">
+                                    封板 {st.firstSealTime}
+                                  </span>
+                                  <span className="font-mono tabular-nums text-[11px] text-[#F59E0B]">
+                                    封单 {formatAmountCN(st.sealOrderAmount)}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </section>
         )}
 
-        {/* ==================== 模块三：题材点面共振与先锋龙身位识别 ==================== */}
+        {/* ==================== 模块三：板块/题材共振监测与主流资金进攻方向雷达 ==================== */}
         {(quantModuleTab === 'overview' || quantModuleTab === 'resonance') && (
-          <section
-            aria-label="题材点面共振与先锋龙身位识别"
-            className="bg-[#1e222d] border border-[#2a2e39] rounded-md overflow-hidden"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-[#131722] border-b border-[#2a2e39]">
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-[#38bdf8]" />
-                <h2 className="text-xs sm:text-sm font-bold text-white">
-                  题材点面共振与先锋龙身位识别 (“点”最早封板/最高标 × “面”板块涨幅/红盘比/涨停潮)
-                </h2>
-              </div>
-              <span className="text-[11px] text-[#9ca3af]">
-                点击任意龙头标的即时联动切换主图与盘口
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 p-3">
-              {themeResonanceList.slice(0, 6).map((theme) => {
-                const pctColor = getSignedColorClass(theme.sectorChangePercent);
-                return (
-                  <div
-                    key={theme.sectorName}
-                    className="flex flex-col justify-between p-3 rounded bg-[#131722] border border-[#2a2e39] space-y-2.5"
-                  >
-                    <div className="flex items-center justify-between gap-2 border-b border-[#2a2e39] pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold text-white">
-                          {theme.sectorName}
-                        </span>
-                        <span
-                          className={`font-mono tabular-nums text-xs font-bold ${pctColor}`}
-                        >
-                          {formatSignedPercent(theme.sectorChangePercent)}
-                        </span>
-                        <span
-                          className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                            theme.resonanceStatus === '主线强共振'
-                              ? 'bg-[#F6465D]/20 text-[#F6465D] border border-[#F6465D]/40'
-                              : theme.resonanceStatus === '局部轮动'
-                              ? 'bg-[#F59E0B]/20 text-[#F59E0B] border border-[#F59E0B]/40'
-                              : 'bg-[#1e222d] text-[#9ca3af] border border-[#2a2e39]'
-                          }`}
-                        >
-                          {theme.resonanceStatus}
-                        </span>
-                      </div>
-                      <div className="text-xs font-mono tabular-nums">
-                        <span className="text-[#787b86]">共振分: </span>
-                        <strong className="text-[#38bdf8]">{theme.resonanceScore}</strong>
-                      </div>
-                    </div>
-
-                    {/* 板块“面”与核心“点”对照 */}
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => setSelectedSymbol(theme.pioneerDragon.symbol)}
-                        className="text-left p-2 rounded bg-[#1e222d] hover:bg-[#262b38] border border-[#2a2e39] transition-colors cursor-pointer"
-                      >
-                        <div className="text-[10px] text-[#787b86]">
-                          点火先锋龙 / 空间标杆 (“点”)
-                        </div>
-                        <div className="mt-0.5 flex items-center justify-between">
-                          <span className="font-bold text-white">
-                            {theme.pioneerDragon.name}
-                          </span>
-                          <span
-                            className={`font-mono tabular-nums font-semibold ${getSignedColorClass(
-                              theme.pioneerDragon.changePercent
-                            )}`}
-                          >
-                            {formatSignedPercent(theme.pioneerDragon.changePercent)}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 text-[10px] font-mono tabular-nums text-[#F59E0B]">
-                          {theme.pioneerDragon.consecutiveBoards >= 1
-                            ? `${theme.pioneerDragon.consecutiveBoards}连板 · 封板 ${
-                                theme.pioneerDragon.firstSealTime ?? '09:30'
-                              }`
-                            : '日内领涨先锋'}
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setSelectedSymbol(theme.capacityCore.symbol)}
-                        className="text-left p-2 rounded bg-[#1e222d] hover:bg-[#262b38] border border-[#2a2e39] transition-colors cursor-pointer"
-                      >
-                        <div className="text-[10px] text-[#787b86]">
-                          大容量趋势中军 (“面”核心)
-                        </div>
-                        <div className="mt-0.5 flex items-center justify-between">
-                          <span className="font-bold text-white">
-                            {theme.capacityCore.name}
-                          </span>
-                          <span
-                            className={`font-mono tabular-nums font-semibold ${getSignedColorClass(
-                              theme.capacityCore.changePercent
-                            )}`}
-                          >
-                            {formatSignedPercent(theme.capacityCore.changePercent)}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 text-[10px] font-mono tabular-nums text-[#9ca3af]">
-                          成交额 {formatAmountCN(theme.capacityCore.amount)} · 红盘比{' '}
-                          {theme.upRatioPercent}%
-                        </div>
-                      </button>
-                    </div>
-
-                    {/* 板块内身位成员列表 */}
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      {theme.memberStocks.map((m) => (
-                        <button
-                          key={m.symbol}
-                          type="button"
-                          onClick={() => setSelectedSymbol(m.symbol)}
-                          className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#1e222d] hover:bg-[#2962ff]/20 border border-[#2a2e39] text-[11px] cursor-pointer"
-                        >
-                          <span className="text-[#38bdf8] font-medium">
-                            [{m.roleLabel}]
-                          </span>
-                          <span className="text-white font-medium">{m.name}</span>
-                          <span
-                            className={`font-mono tabular-nums ${getSignedColorClass(
-                              m.changePercent
-                            )}`}
-                          >
-                            {formatSignedPercent(m.changePercent)}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+          <ThemeResonanceMonitorPanel
+            overview={themeResonanceOverview}
+            scenario={themeScenario}
+            onChangeScenario={setThemeScenario}
+            selectedSymbol={selectedSymbol}
+            onSelectSymbol={setSelectedSymbol}
+            compact={compact}
+          />
         )}
 
         {/* ==================== 模块四：现行注册制法定复利异动监管逆推 (k ∈ {2, 3}) ==================== */}
@@ -1266,6 +1483,405 @@ export const UltraShortQuantWorkbench: React.FC<{ compact?: boolean }> = ({
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </section>
+          )}
+
+        {/* ==================== 模块六：龙虎榜席位性质分析 (游资常用席位 / 机构专用 / 量化大本营) ==================== */}
+        {(quantModuleTab === 'overview' || quantModuleTab === 'dragon_tiger') &&
+          activeDragonTiger && (
+            <section
+              aria-label="龙虎榜席位性质分析"
+              data-testid="dragon-tiger-section"
+              className="bg-[#1e222d] border border-[#2a2e39] rounded-md overflow-hidden"
+            >
+              {/* 顶部标题栏 + 席位结构沙盘推演切换 */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-[#131722] border-b border-[#2a2e39]">
+                <div className="flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-[#F6465D]" />
+                  <h2 className="text-xs sm:text-sm font-bold text-white">
+                    龙虎榜席位性质解析引擎 (自动识别游资常用席位 / 机构专用 / 量化大本营 / 散户合力)
+                  </h2>
+                  <span className="px-1.5 py-0.5 rounded bg-[#F6465D]/15 border border-[#F6465D]/40 font-mono tabular-nums text-[10px] font-bold text-[#F6465D]">
+                    {activeDragonTiger.boardType === '3D' ? '连续3日榜' : '当日龙虎榜'}
+                  </span>
+                </div>
+
+                {/* 席位结构沙盘推演切换按钮组 */}
+                <div
+                  role="group"
+                  aria-label="龙虎榜席位结构推演模式"
+                  className="flex items-center bg-[#1e222d] p-0.5 rounded border border-[#2a2e39] text-[11px]"
+                >
+                  <button
+                    type="button"
+                    data-testid="dt-preset-live"
+                    onClick={() => setDragonTigerPreset('live')}
+                    className={`px-2 py-0.5 rounded transition-colors cursor-pointer whitespace-nowrap ${
+                      dragonTigerPreset === 'live'
+                        ? 'bg-[#2962ff] text-white font-semibold'
+                        : 'text-[#9ca3af] hover:text-white'
+                    }`}
+                  >
+                    实盘龙虎榜解析
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="dt-preset-resonance"
+                    onClick={() => setDragonTigerPreset('hot_inst_resonance')}
+                    className={`px-2 py-0.5 rounded transition-colors cursor-pointer whitespace-nowrap ${
+                      dragonTigerPreset === 'hot_inst_resonance'
+                        ? 'bg-[#F6465D] text-white font-semibold'
+                        : 'text-[#9ca3af] hover:text-white'
+                    }`}
+                  >
+                    游资+机构共振
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="dt-preset-quant"
+                    onClick={() => setDragonTigerPreset('quant_crowded')}
+                    className={`px-2 py-0.5 rounded transition-colors cursor-pointer whitespace-nowrap ${
+                      dragonTigerPreset === 'quant_crowded'
+                        ? 'bg-[#a855f7] text-white font-semibold'
+                        : 'text-[#9ca3af] hover:text-white'
+                    }`}
+                  >
+                    量化大本营扎堆
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="dt-preset-retail"
+                    onClick={() => setDragonTigerPreset('retail_takeover')}
+                    className={`px-2 py-0.5 rounded transition-colors cursor-pointer whitespace-nowrap ${
+                      dragonTigerPreset === 'retail_takeover'
+                        ? 'bg-[#F59E0B] text-[#0d0e12] font-semibold'
+                        : 'text-[#9ca3af] hover:text-white'
+                    }`}
+                  >
+                    拉萨散户接盘
+                  </button>
+                </div>
+              </div>
+
+              {/* 快捷焦点上榜个股切换条 + 当前标的上榜原因 */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-[#161a24] border-b border-[#2a2e39] text-xs">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] text-[#787b86] mr-1">焦点龙虎榜标的:</span>
+                  {['601360.SH', '002230.SZ', '300059.SZ', '688981.SH', '000651.SZ', '300750.SZ'].map(
+                    (sym) => {
+                      const q = quotes[sym];
+                      if (!q) return null;
+                      const isCurrent = selectedSymbol === sym;
+                      return (
+                        <button
+                          key={sym}
+                          type="button"
+                          data-testid={`dt-stock-pill-${q.code}`}
+                          onClick={() => setSelectedSymbol(sym)}
+                          className={`flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] transition-colors cursor-pointer whitespace-nowrap ${
+                            isCurrent
+                              ? 'bg-[#2962ff]/25 border-[#2962ff] text-white font-bold'
+                              : 'bg-[#131722] border-[#2a2e39] text-[#9ca3af] hover:text-white'
+                          }`}
+                        >
+                          <span>{q.name}</span>
+                          <span
+                            className={`font-mono tabular-nums ${getSignedColorClass(
+                              q.changePercent
+                            )}`}
+                          >
+                            {formatSignedPercent(q.changePercent)}
+                          </span>
+                        </button>
+                      );
+                    }
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 font-mono tabular-nums text-[11px] text-[#9ca3af]">
+                  <span>
+                    当前解析:{' '}
+                    <strong className="text-white font-sans">
+                      {activeDragonTiger.name} ({activeDragonTiger.symbol})
+                    </strong>
+                  </span>
+                  <span className="text-[#2a2e39]">|</span>
+                  <span className="text-[#F59E0B] font-sans">
+                    上榜原因: {activeDragonTiger.listingReason}
+                  </span>
+                </div>
+              </div>
+
+              {/* D3.js 游资大佬营业部关联网络图 & 点击节点席位活跃度画像 */}
+              <DragonTigerNetworkGraph
+                analysis={activeDragonTiger}
+                onSelectSymbol={setSelectedSymbol}
+              />
+
+              {/* 四大席位性质（游资常用席位 / 机构专用 / 量化大本营 / 散户大本营）资金力量汇总卡片 */}
+              <div
+                data-testid="dragon-tiger-nature-summary"
+                className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 p-3 bg-[#161a24] border-b border-[#2a2e39]"
+              >
+                {activeDragonTiger.campBreakdown.map((camp) => {
+                  const netColor =
+                    camp.netAmount > 0
+                      ? 'text-[#F6465D]'
+                      : camp.netAmount < 0
+                      ? 'text-[#0ECB81]'
+                      : 'text-[#9ca3af]';
+                  return (
+                    <div
+                      key={camp.nature}
+                      data-testid={`dt-camp-card-${camp.nature}`}
+                      className="p-2.5 rounded bg-[#1e222d] border border-[#2a2e39] flex flex-col justify-between min-w-0"
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <span
+                          className={`px-1.5 py-0.5 rounded border text-[11px] font-bold whitespace-nowrap ${getSeatNatureBadgeClass(
+                            camp.nature
+                          )}`}
+                        >
+                          {camp.label}
+                        </span>
+                        <span className="font-mono tabular-nums text-[10px] text-[#9ca3af] whitespace-nowrap">
+                          <strong className="text-white">{camp.seatCount}</strong>席 · 买占
+                          <strong className="text-white">{camp.buySharePercent}%</strong>
+                        </span>
+                      </div>
+
+                      <div className="mt-2 flex items-baseline justify-between font-mono tabular-nums whitespace-nowrap">
+                        <span className="text-[11px] text-[#787b86]">阵营净额:</span>
+                        <span className={`text-base font-bold ${netColor}`}>
+                          {camp.netAmount > 0 ? '+' : camp.netAmount < 0 ? '-' : ''}
+                          {formatAmountCN(Math.abs(camp.netAmount))}
+                        </span>
+                      </div>
+
+                      <div className="mt-1 flex items-center justify-between text-[11px] font-mono tabular-nums text-[#9ca3af] whitespace-nowrap">
+                        <span>
+                          买: <strong className="text-[#F6465D]">{formatAmountCN(camp.buyAmount)}</strong>
+                        </span>
+                        <span>
+                          卖: <strong className="text-[#0ECB81]">{formatAmountCN(camp.sellAmount)}</strong>
+                        </span>
+                      </div>
+
+                      <div className="mt-1.5 pt-1.5 border-t border-[#2a2e39]/70 text-[11px] text-[#787b86] truncate">
+                        {camp.representativeTags.length > 0
+                          ? `代表: ${camp.representativeTags.join(' / ')}`
+                          : '当日无该性质席位上榜'}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* 席位协同定性与次日竞价博弈结论横幅 */}
+              <div
+                data-testid="dragon-tiger-verdict-banner"
+                className="p-3 bg-[#131722] border-b border-[#2a2e39] flex flex-col lg:flex-row lg:items-center justify-between gap-3"
+              >
+                <div className="space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      data-testid="dragon-tiger-synergy-label"
+                      className={`px-2 py-0.5 rounded text-xs font-bold border ${
+                        activeDragonTiger.synergyVerdict === 'HOT_INST_RESONANCE' ||
+                        activeDragonTiger.synergyVerdict === 'TOP_HOT_LOCK'
+                          ? 'bg-[#F6465D]/20 text-[#F6465D] border-[#F6465D]/50'
+                          : activeDragonTiger.synergyVerdict === 'QUANT_CROWDED_RISK'
+                          ? 'bg-[#a855f7]/20 text-[#c084fc] border-[#a855f7]/50'
+                          : 'bg-[#0ECB81]/20 text-[#0ECB81] border-[#0ECB81]/50'
+                      }`}
+                    >
+                      {activeDragonTiger.synergyLabel}
+                    </span>
+                    <span className="text-xs font-mono tabular-nums text-[#d1d4dc]">
+                      前五买合计:{' '}
+                      <strong className="text-[#F6465D]">
+                        {formatAmountCN(activeDragonTiger.totalBuyAmount)}
+                      </strong>{' '}
+                      ({activeDragonTiger.buyTurnoverRatioPercent}%)
+                    </span>
+                    <span className="text-[#2a2e39]">|</span>
+                    <span className="text-xs font-mono tabular-nums text-[#d1d4dc]">
+                      前五卖合计:{' '}
+                      <strong className="text-[#0ECB81]">
+                        {formatAmountCN(activeDragonTiger.totalSellAmount)}
+                      </strong>{' '}
+                      ({activeDragonTiger.sellTurnoverRatioPercent}%)
+                    </span>
+                    <span className="text-[#2a2e39]">|</span>
+                    <span className="text-xs font-mono tabular-nums">
+                      龙虎榜净额:{' '}
+                      <strong
+                        className={
+                          activeDragonTiger.totalNetAmount >= 0
+                            ? 'text-[#F6465D]'
+                            : 'text-[#0ECB81]'
+                        }
+                      >
+                        {activeDragonTiger.totalNetAmount >= 0 ? '+' : '-'}
+                        {formatAmountCN(Math.abs(activeDragonTiger.totalNetAmount))} (
+                        {formatSignedPercent(activeDragonTiger.netTurnoverRatioPercent)})
+                      </strong>
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#9ca3af] leading-relaxed">
+                    <strong className="text-[#38bdf8]">次日博弈预案：</strong>
+                    {activeDragonTiger.actionablePlaybook}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 bg-[#1e222d] px-3 py-2 rounded border border-[#2a2e39] shrink-0">
+                  <div className="text-right">
+                    <div className="text-[10px] text-[#787b86]">次日溢价预期指数</div>
+                    <div
+                      className={`font-mono tabular-nums text-base font-bold ${
+                        activeDragonTiger.nextDayPremiumScore >= 75
+                          ? 'text-[#F6465D]'
+                          : activeDragonTiger.nextDayPremiumScore >= 45
+                          ? 'text-[#F59E0B]'
+                          : 'text-[#0ECB81]'
+                      }`}
+                    >
+                      {activeDragonTiger.nextDayPremiumScore} / 100
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 买入前五营业部 vs 卖出前五营业部 全宽深度解析表 */}
+              <div className="grid grid-cols-1 divide-y divide-[#2a2e39]">
+                {/* 上表：买入金额前五名营业部 */}
+                <div data-testid="dragon-tiger-buy-table" className="overflow-x-auto">
+                  <div className="px-3 py-2 bg-[#F6465D]/10 border-b border-[#2a2e39] flex items-center justify-between text-xs">
+                    <span className="font-bold text-[#F6465D]">
+                      买入金额最大的前 5 名营业部 (主封与锁仓力量)
+                    </span>
+                    <span className="font-mono tabular-nums text-[11px] text-[#9ca3af]">
+                      前五买合计 {formatAmountCN(activeDragonTiger.totalBuyAmount)} · 占总成交{' '}
+                      {activeDragonTiger.buyTurnoverRatioPercent}%
+                    </span>
+                  </div>
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-[#2a2e39] text-[#787b86] bg-[#161a24] text-[11px]">
+                        <th className="py-2 px-3 whitespace-nowrap">席位</th>
+                        <th className="py-2 px-3 whitespace-nowrap">营业部名称 & 游资/机构操盘特征</th>
+                        <th className="py-2 px-2.5 whitespace-nowrap">席位性质识别</th>
+                        <th className="py-2 px-2.5 text-right whitespace-nowrap">买入金额</th>
+                        <th className="py-2 px-2.5 text-right whitespace-nowrap">卖出金额</th>
+                        <th className="py-2 px-3 text-right whitespace-nowrap">席位净额 / 占总成交比</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#2a2e39]/60">
+                      {activeDragonTiger.buySeats.map((seat) => (
+                        <tr key={`buy-${seat.rank}`} className="hover:bg-[#262b38]/60">
+                          <td className="py-2 px-3 font-mono tabular-nums font-bold text-[#F6465D] whitespace-nowrap">
+                            买{seat.rank}
+                          </td>
+                          <td className="py-2 px-3">
+                            <div className="font-semibold text-white">{seat.branchName}</div>
+                            <div className="text-[11px] text-[#9ca3af] mt-0.5">
+                              <span className="text-[#F59E0B] font-medium">{seat.seatTag}</span> ·{' '}
+                              <span>{seat.operatingStyle}</span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-2.5 whitespace-nowrap">
+                            <span
+                              className={`px-2 py-0.5 rounded border text-[11px] font-semibold ${getSeatNatureBadgeClass(
+                                seat.nature
+                              )}`}
+                            >
+                              {seat.natureLabel}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2.5 text-right font-mono tabular-nums font-semibold text-[#F6465D] whitespace-nowrap">
+                            {formatAmountCN(seat.buyAmount)}
+                          </td>
+                          <td className="py-2 px-2.5 text-right font-mono tabular-nums text-[#0ECB81] whitespace-nowrap">
+                            {formatAmountCN(seat.sellAmount)}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono tabular-nums whitespace-nowrap">
+                            <span className="font-bold text-[#F6465D]">
+                              +{formatAmountCN(seat.netAmount)}
+                            </span>
+                            <span className="ml-1.5 text-[11px] text-[#787b86]">
+                              ({seat.turnoverSharePercent}%)
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 下表：卖出金额前五名营业部 */}
+                <div data-testid="dragon-tiger-sell-table" className="overflow-x-auto">
+                  <div className="px-3 py-2 bg-[#0ECB81]/10 border-b border-[#2a2e39] flex items-center justify-between text-xs">
+                    <span className="font-bold text-[#0ECB81]">
+                      卖出金额最大的前 5 名营业部 (兑现与抛压来源)
+                    </span>
+                    <span className="font-mono tabular-nums text-[11px] text-[#9ca3af]">
+                      前五卖合计 {formatAmountCN(activeDragonTiger.totalSellAmount)} · 占总成交{' '}
+                      {activeDragonTiger.sellTurnoverRatioPercent}%
+                    </span>
+                  </div>
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-[#2a2e39] text-[#787b86] bg-[#161a24] text-[11px]">
+                        <th className="py-2 px-3 whitespace-nowrap">席位</th>
+                        <th className="py-2 px-3 whitespace-nowrap">营业部名称 & 游资/机构操盘特征</th>
+                        <th className="py-2 px-2.5 whitespace-nowrap">席位性质识别</th>
+                        <th className="py-2 px-2.5 text-right whitespace-nowrap">买入金额</th>
+                        <th className="py-2 px-2.5 text-right whitespace-nowrap">卖出金额</th>
+                        <th className="py-2 px-3 text-right whitespace-nowrap">席位净额 / 占总成交比</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#2a2e39]/60">
+                      {activeDragonTiger.sellSeats.map((seat) => (
+                        <tr key={`sell-${seat.rank}`} className="hover:bg-[#262b38]/60">
+                          <td className="py-2 px-3 font-mono tabular-nums font-bold text-[#0ECB81] whitespace-nowrap">
+                            卖{seat.rank}
+                          </td>
+                          <td className="py-2 px-3">
+                            <div className="font-semibold text-white">{seat.branchName}</div>
+                            <div className="text-[11px] text-[#9ca3af] mt-0.5">
+                              <span className="text-[#38bdf8] font-medium">{seat.seatTag}</span> ·{' '}
+                              <span>{seat.operatingStyle}</span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-2.5 whitespace-nowrap">
+                            <span
+                              className={`px-2 py-0.5 rounded border text-[11px] font-semibold ${getSeatNatureBadgeClass(
+                                seat.nature
+                              )}`}
+                            >
+                              {seat.natureLabel}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2.5 text-right font-mono tabular-nums text-[#F6465D] whitespace-nowrap">
+                            {formatAmountCN(seat.buyAmount)}
+                          </td>
+                          <td className="py-2 px-2.5 text-right font-mono tabular-nums font-semibold text-[#0ECB81] whitespace-nowrap">
+                            {formatAmountCN(seat.sellAmount)}
+                          </td>
+                          <td className="py-2 px-3 text-right font-mono tabular-nums whitespace-nowrap">
+                            <span className="font-bold text-[#0ECB81]">
+                              -{formatAmountCN(Math.abs(seat.netAmount))}
+                            </span>
+                            <span className="ml-1.5 text-[11px] text-[#787b86]">
+                              ({seat.turnoverSharePercent}%)
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </section>
           )}

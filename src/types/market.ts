@@ -254,8 +254,33 @@ export interface BoardTierGroup {
   }[];
 }
 
+export interface LadderDistributionRow {
+  boardCount: number; // 连板高度 1 ~ maxBoardHeight
+  label: string; // 如 '6连板 (最高标)', '5连板 (断层)', '首板 (1板)'
+  yesterdayBaseLabel: string; // 如 '昨5板 (1家)', '昨4板 (1家)', '昨首板 (4家)'
+  yesterdayBaseCount: number; // 昨日对应低一板基数
+  yesterdayCandidateCount: number | null; // 昨日(N-1)板候选家数 (首板为 null)
+  todaySealedCount: number; // 今日成功晋级封板家数
+  eliminatedCount: number; // 晋级失败淘汰家数
+  promotionRate: number | null; // 晋级率 (%)
+  isFaultMissing: boolean; // 是否为断层真空层
+  isFaultLevel: boolean; // 是否为晋级空间断层层级
+  stockNames: string[]; // 该层封板股票名称列表
+  stocks: BoardTierGroup['stocks']; // 该层封板股票详情列表
+}
+
+export interface LadderFaultZone {
+  fromBoard: number; // 断层起始板数（低）
+  toBoard: number; // 断层结束板数（高）
+  spanSize: number; // 连续断层跨度层数
+  label: string; // 如 '4连板 ~ 5连板 (连续2层断层)'
+}
+
+export type EbbTideRiskLevel = 'HIGH_EBB_RISK' | 'MEDIUM_FAULT_RISK' | 'LOW_HEALTHY';
+
 export interface BoardLadderSummary {
   maxBoardHeight: number; // 当前最高空间板高度
+  secondMaxBoardHeight: number; // 次高板高度（用于计算最高标孤立度）
   spaceDragonSymbol: string;
   spaceDragonName: string;
   firstToSecondRate: number; // 首板晋级率 (1进2 %)
@@ -264,24 +289,55 @@ export interface BoardLadderSummary {
   sealSuccessRate: number; // 今日封板率 (%)
   brokenBoardCount: number; // 今日炸板家数
   limitDownCount: number; // 跌停/核按钮家数
-  missingBoards: number[]; // 断层缺失的连板高度列表（如 [4, 5]）
+  missingBoards: number[]; // 断层缺失的连板高度列表（如 [5, 4]）
   hasLadderFault: boolean; // 是否存在连板梯队断层
+  faultZones: LadderFaultZone[]; // 连续断层区间列表
+  maxFaultSpan: number; // 最大连续断层跨度
+  topDragonIsolation: boolean; // 最高空间板是否处于断层孤立独苗状态 (maxBoard - secondMaxBoard >= 2)
+  ebbTideRiskLevel: EbbTideRiskLevel; // 潜在退潮风险等级
+  ebbTideRiskScore: number; // 潜在退潮风险量化评分 (0 ~ 100)
+  ebbTideWarningTitle: string; // 退潮风险核心警示标题
+  ebbTideRiskReasons: string[]; // 退潮风险多维归因列表
+  tacticalPlaybook: string; // 游资应对策略建议
+  distributionComparison: LadderDistributionRow[]; // 今日涨停板分布与昨日基数逐层对比
   faultWarningText: string; // 断层监测结论
   sentimentPhase: '主升共振期' | '高潮分化期' | '混沌试错期' | '退潮核按钮期';
   tiers: BoardTierGroup[];
 }
 
+export type ThemeResonanceScenarioPreset =
+  | 'live'
+  | 'ai_chip_mainstream'
+  | 'rotation_divergence';
+
+export type ThemeAttackRole =
+  | 'MAIN_ATTACK'      // 主流资金主攻方向
+  | 'SUB_ROTATION'     // 支线轮动进攻
+  | 'DEFENSIVE_HOLD'   // 防守观察/分歧
+  | 'EBB_RETREAT';     // 资金兑现退潮
+
 /**
- * 题材点面共振与先锋龙识别结果
+ * 题材点面共振、涨停密度与领涨龙头联动识别结果
  */
 export interface ThemeResonanceItem {
   sectorName: string;
   sectorChangePercent: number; // 板块“面”整体涨幅 (%)
-  limitUpCount: number; // 板块涨停家数
+  limitUpCount: number; // 板块内涨停家数
+  sectorConstituentCount: number; // 板块核心跟踪成分股基数
+  limitUpDensityPercent: number; // 板块内涨停个股密度 (%) = limitUpCount / sectorConstituentCount * 100
+  densityLevel: '涨停潮高密区' | '梯队成型区' | '局部试错区' | '冰点无溢价';
   upRatioPercent: number; // 板块内红盘家数占比 (%)
   totalNetInflowCNY: number; // 板块主力净买额 (元)
+  totalTurnoverCNY: number; // 板块总成交额 (元)
   resonanceScore: number; // 点面共振综合得分 (0 ~ 100)
   resonanceStatus: '主线强共振' | '局部轮动' | '分歧兑现';
+  dragonLinkageScore: number; // 领涨龙头联动指数 (0 ~ 100)：衡量先锋龙封板、中军放量与后排跟风协同度
+  dragonLinkageStatus: '先锋中军强联动' | '单点脉冲跟风弱' | '龙头孤立背离';
+  dragonLinkageDesc: string; // 龙头联动传导链条描述
+  attackRole: ThemeAttackRole; // 当日主力资金进攻角色定性
+  attackRoleLabel: string; // '主攻核心主线' | '支线轮动助攻' | '分歧观察区' | '资金兑现退潮'
+  capitalAttackSharePercent: number; // 占全市场做多资金进攻权重 (%)
+  heatWeight: number; // D3 矩形树图/热力分布图面积权重
   pioneerDragon: {
     symbol: string;
     name: string;
@@ -305,7 +361,26 @@ export interface ThemeResonanceItem {
     dragonRole: DragonRoleTag;
     roleLabel: string;
     firstSealTime: string | null;
+    amount?: number;
+    isLimitUp?: boolean;
   }[];
+}
+
+/**
+ * 全市场板块/题材共振监测与主流资金进攻方向汇总
+ */
+export interface ThemeResonanceOverview {
+  scenario: ThemeResonanceScenarioPreset;
+  themes: ThemeResonanceItem[];
+  mainstreamAttackSectors: string[]; // 当日主流资金进攻主线名称列表
+  subRotationSectors: string[]; // 支线轮动题材列表
+  retreatSectors: string[]; // 退潮兑现题材列表
+  marketResonanceScore: number; // 全市场主线共振强度指数 (0 ~ 100)
+  mainstreamConcentrationPercent: number; // 前二主线资金与涨停集中度 (%)
+  totalMarketLimitUpCount: number; // 全市场题材池合计涨停家数
+  avgLimitUpDensityPercent: number; // 热门题材平均涨停密度 (%)
+  attackDirectionHeadline: string; // 主流资金进攻方向核心结论
+  tacticalPlaybook: string; // 游资接力与仓位配置策略建议
 }
 
 /**
@@ -359,6 +434,171 @@ export interface VWDVRResult {
   signalLabel: string;
   actionAdvice: string;
 }
+
+/**
+ * 六、龙虎榜席位性质分类与游资/机构/量化博弈分析 (基于沪深交易所公开龙虎榜前五买卖席位披露)
+ */
+export type DragonTigerSeatNature =
+  | 'HOT_MONEY' // 游资常用席位（如作手新一、章盟主、赵老哥、炒股养家、孙哥等）
+  | 'INSTITUTION' // 机构专用 / 沪深股通北向配置席位
+  | 'QUANT_CAMP' // 量化大本营（如华泰总部、中信上分、中金上分等高频算法席位）
+  | 'RETAIL_CAMP'; // 散户合力大本营（如东方财富拉萨团结路/东环路天团）
+
+export interface DragonTigerSeatItem {
+  rank: number; // 1 ~ 5
+  side: 'BUY' | 'SELL';
+  branchName: string; // 营业部全称
+  nature: DragonTigerSeatNature; // 席位性质分类
+  natureLabel: string; // '游资常用席位' | '机构专用' | '量化大本营' | '散户大本营'
+  seatTag: string; // 席位名号（如 '顶级游资 · 作手新一'、'机构专用'、'量化大本营 · 华泰总部'）
+  operatingStyle: string; // 操盘风格标签（如 '龙头连板主封/格局锁仓'、'高频打板/次日冲高兑现'）
+  buyAmount: number; // 买入金额 (元)
+  sellAmount: number; // 卖出金额 (元)
+  netAmount: number; // 净买额 = buyAmount - sellAmount (元)
+  turnoverSharePercent: number; // 占当日总成交额比例 (%)
+}
+
+export interface DragonTigerCampSummary {
+  nature: DragonTigerSeatNature;
+  label: string;
+  buyAmount: number;
+  sellAmount: number;
+  netAmount: number;
+  buySharePercent: number; // 占前五总买额比例 (%)
+  seatCount: number; // 上榜席位数
+  representativeTags: string[]; // 代表席位名号
+}
+
+export type DragonTigerPresetMode =
+  | 'live'
+  | 'hot_inst_resonance'
+  | 'quant_crowded'
+  | 'retail_takeover';
+
+export interface DragonTigerAnalysis {
+  symbol: string;
+  code: string;
+  name: string;
+  sector: string;
+  price: number;
+  changePercent: number;
+  dailyAmount: number;
+  boardType: '1D' | '3D'; // 单日榜 vs 连续三日榜
+  listingReason: string; // 上榜原因（如 '日涨幅偏离值达7%的证券'）
+  buySeats: DragonTigerSeatItem[]; // 买入前五营业部
+  sellSeats: DragonTigerSeatItem[]; // 卖出前五营业部
+  totalBuyAmount: number; // 前五合计买入额 (元)
+  totalSellAmount: number; // 前五合计卖出额 (元)
+  totalNetAmount: number; // 前五合计净买额 (元)
+  buyTurnoverRatioPercent: number; // 前五买入占总成交比 (%)
+  sellTurnoverRatioPercent: number; // 前五卖出占总成交比 (%)
+  netTurnoverRatioPercent: number; // 龙虎榜净额占总成交比 (%)
+  campBreakdown: DragonTigerCampSummary[]; // 四大资金阵营（游资/机构/量化/散户）汇总
+  dominantCamp: DragonTigerSeatNature;
+  synergyVerdict:
+    | 'HOT_INST_RESONANCE' // 游资+机构共振主封
+    | 'TOP_HOT_LOCK' // 顶级游资重仓接力锁仓
+    | 'QUANT_CROWDED_RISK' // 量化大本营扎堆 (防次日冲高砸盘)
+    | 'RETAIL_TAKEOVER_WARN' // 散户大本营接盘预警
+    | 'MAIN_FORCE_EXIT'; // 主力席位大举出逃
+  synergyLabel: string;
+  nextDayPremiumScore: number; // 次日溢价预期评分 (0 ~ 100)
+  actionablePlaybook: string; // 次日集合竞价与分时应对策略
+}
+
+/**
+ * 龙虎榜游资大佬/营业部席位近期上榜战绩明细
+ */
+export interface DragonTigerSeatBattleRecord {
+  date: string; // 上榜日期，如 '2026-10-22'
+  symbol: string;
+  name: string;
+  sector: string;
+  roleLabel: string; // 如 '主封买一 (3连板)' / '格局锁仓' / '分歧引导'
+  buyAmount: number; // 买入额 (元)
+  netAmount: number; // 净买额 (元)
+  nextDayPremiumPercent: number; // 次日溢价率 (%)
+}
+
+/**
+ * 龙虎榜营业部席位活跃度与历史操盘画像 (点击网络图节点时展示)
+ */
+export interface DragonTigerSeatActivityProfile {
+  branchName: string; // 营业部全称
+  shortBranchName: string; // 营业部简称（如 '国君南京太平南路'）
+  seatTag: string; // 席位名号（如 '顶级游资 · 作手新一'）
+  nature: DragonTigerSeatNature;
+  natureLabel: string;
+  operatingStyle: string;
+  activityLevelLabel: '极度活跃 · 市场风向标' | '高度活跃 · 主线常客' | '中度活跃 · 波段出击';
+  activityScore: number; // 席位综合活跃度指数 (0 ~ 100)
+  appearances30d: number; // 近30日上榜次数 (次)
+  totalCapital30d: number; // 近30日累计动用买方资金 (元)
+  avgSingleBuyAmount: number; // 单次上榜场均买入额 (元)
+  nextDayAvgPremiumPercent: number; // 上榜次日平均溢价率 (%)
+  sealWinRatePercent: number; // 封板次日溢价胜率 (%)
+  holdingHorizon: string; // 持仓周期特征（如 'T+1 溢价锁仓 / 主升格局 2~3 日'）
+  favoriteSectors: string[]; // 主攻题材偏好
+  coAppearingAllies: string[]; // 高频同榜协同席位名号
+  recentBattles: DragonTigerSeatBattleRecord[]; // 近期代表性上榜战役
+  monthlyTrend: { weekLabel: string; count: number; capital: number }[]; // 近4周上榜频次与资金趋势
+}
+
+/**
+ * D3.js 龙虎榜席位关联网络图节点与连线数据结构
+ */
+export interface DragonTigerGraphNode {
+  id: string;
+  nodeType: 'TARGET_STOCK' | 'BROKER_SEAT' | 'ALLY_STOCK';
+  label: string; // 节点主标题（如 '三六零' 或 '顶级游资 · 作手新一'）
+  subLabel: string; // 节点副标题（如 '601360.SH' 或 '国君南京太平南路'）
+  branchName?: string; // 若为营业部节点，对应完整 branchName
+  symbol?: string; // 若为股票节点，对应股票代码
+  nature?: DragonTigerSeatNature;
+  natureLabel?: string;
+  side?: 'BUY' | 'SELL' | 'BOTH';
+  rankLabel?: string; // 如 '买1' / '卖2' / '买卖同榜'
+  buyAmount: number; // 当日买入金额 (元)
+  sellAmount: number; // 当日卖出金额 (元)
+  netAmount: number; // 当日净买额 (元)
+  turnoverSharePercent: number;
+  activityProfile?: DragonTigerSeatActivityProfile;
+  radius: number; // 节点视觉半径 (px)
+}
+
+export interface DragonTigerGraphLink {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  linkType: 'PRIMARY_BUY' | 'PRIMARY_SELL' | 'CO_APPEAR_STOCK';
+  side: 'BUY' | 'SELL';
+  buyAmount: number; // 连线代表的核心买入金额 (元)，决定连线粗细
+  sellAmount: number;
+  netAmount: number;
+  strokeWidth: number; // 基于买入金额映射的连线粗细 (px, 1.8 ~ 9.5)
+  turnoverSharePercent: number;
+  description: string;
+}
+
+export interface DragonTigerNetworkData {
+  symbol: string;
+  stockName: string;
+  nodes: DragonTigerGraphNode[];
+  links: DragonTigerGraphLink[];
+  maxBuyAmount: number;
+  minBuyAmount: number;
+  hotMoneySeatCount: number;
+  totalHotMoneyBuyAmount: number;
+}
+
+export type QuantModuleTabId =
+  | 'overview'
+  | 'auction'
+  | 'ladder'
+  | 'resonance'
+  | 'regulatory'
+  | 'vwdvr'
+  | 'dragon_tiger';
 
 /**
  * 价格与涨跌幅预警条件类型

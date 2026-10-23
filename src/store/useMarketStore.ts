@@ -163,7 +163,14 @@ export interface MarketStoreState {
 
   // 超短游资量化工作台模式与子模块切换
   workspaceMode: 'chart' | 'quant';
-  quantModuleTab: 'overview' | 'auction' | 'ladder' | 'resonance' | 'regulatory' | 'vwdvr';
+  quantModuleTab:
+    | 'overview'
+    | 'auction'
+    | 'ladder'
+    | 'resonance'
+    | 'regulatory'
+    | 'vwdvr'
+    | 'dragon_tiger';
 
   // WebSocket 连接与节流监控状态
   connectionStatus: ConnectionStatus;
@@ -185,10 +192,24 @@ export interface MarketStoreState {
   setAlertModalOpen: (open: boolean) => void;
   setWorkspaceMode: (mode: 'chart' | 'quant') => void;
   setQuantModuleTab: (
-    tab: 'overview' | 'auction' | 'ladder' | 'resonance' | 'regulatory' | 'vwdvr'
+    tab:
+      | 'overview'
+      | 'auction'
+      | 'ladder'
+      | 'resonance'
+      | 'regulatory'
+      | 'vwdvr'
+      | 'dragon_tiger'
   ) => void;
   openQuantModule: (
-    tab: 'overview' | 'auction' | 'ladder' | 'resonance' | 'regulatory' | 'vwdvr',
+    tab:
+      | 'overview'
+      | 'auction'
+      | 'ladder'
+      | 'resonance'
+      | 'regulatory'
+      | 'vwdvr'
+      | 'dragon_tiger',
     symbol?: string
   ) => void;
   setConnectionStatus: (status: ConnectionStatus) => void;

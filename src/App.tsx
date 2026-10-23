@@ -5,6 +5,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { BellRing, X } from 'lucide-react';
+import { CallAuctionRadarPlugin } from './components/CallAuctionRadarPlugin';
 import { FinancialChart } from './components/FinancialChart';
 import { IndexTickerBar } from './components/IndexTickerBar';
 import { OrderBook5Panel } from './components/OrderBook5Panel';
@@ -13,10 +14,7 @@ import { PWAInstallModal } from './components/PWAInstallModal';
 import { StockQuoteHeader } from './components/StockQuoteHeader';
 import { TopNavBar } from './components/TopNavBar';
 import { TradeTicksAndMetricsPanel } from './components/TradeTicksAndMetricsPanel';
-import {
-  UltraShortQuantWorkbench,
-  UltraShortStockDiagnosticStrip,
-} from './components/UltraShortQuantWorkbench';
+import { UltraShortQuantWorkbench } from './components/UltraShortQuantWorkbench';
 import { WatchlistPanel } from './components/WatchlistPanel';
 import { marketWsClient } from './services/wsClient';
 import { useMarketStore } from './store/useMarketStore';
@@ -275,10 +273,10 @@ export default function App() {
           <WatchlistPanel />
         </div>
 
-        {/* 中间主区域：顶部股票实时总览 + 超短游资五维诊断条 + 中部原生 Canvas K线/分时主副图 或 超短游资量化作战室 */}
+        {/* 中间主区域：顶部股票实时总览 + 09:25 竞价雷达插件 + 中部原生 Canvas K线/分时主副图 或 超短游资量化作战室 */}
         <div className="flex flex-col flex-1 min-h-0 overflow-hidden md:border-r md:border-[#2a2e39]">
           <StockQuoteHeader />
-          <UltraShortStockDiagnosticStrip />
+          <CallAuctionRadarPlugin />
           {workspaceMode === 'quant' ? (
             <UltraShortQuantWorkbench />
           ) : (
